@@ -113,7 +113,16 @@ export class WarrantyCasesController {
   @ApiOperation({
     summary: 'Upload / attach evidence item with auto-assigned OEM file naming and OCR validation',
   })
-  async addEvidence(@Param('id') id: string, @Body() dto: AddEvidenceDto): Promise<WarrantyCase> {
+  async addEvidence(
+    @Param('id') id: string,
+    @Body() dto: AddEvidenceDto,
+    @Headers('x-user-role') xUserRole?: string,
+  ): Promise<WarrantyCase> {
+    if (xUserRole && xUserRole !== UserRole.TECHNICIAN) {
+      throw new ForbiddenException(
+        'Access denied: Admins and Clerks are only authorized to review and flag cases, not upload or retake images. Evidence capture is strictly reserved for Technicians.',
+      );
+    }
     return this.casesService.addEvidence(id, dto);
   }
 
@@ -129,7 +138,13 @@ export class WarrantyCasesController {
   @ApiOperation({
     summary: 'Technician Submit: Enforces all mandatory gates before transitioning to Awaiting Review',
   })
-  async submitFromWorkshop(@Param('id') id: string): Promise<WarrantyCase> {
+  async submitFromWorkshop(
+    @Param('id') id: string,
+    @Headers('x-user-role') xUserRole?: string,
+  ): Promise<WarrantyCase> {
+    if (xUserRole && xUserRole !== UserRole.TECHNICIAN) {
+      throw new ForbiddenException('Access denied: Only technicians can submit cases from workshop to review.');
+    }
     return this.casesService.submitFromWorkshop(id);
   }
 

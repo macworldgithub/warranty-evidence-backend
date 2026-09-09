@@ -84,6 +84,9 @@ export class FlagItemSubdocument {
 
   @Prop()
   resolvedAt?: string;
+
+  @Prop()
+  technicianNote?: string;
 }
 export const FlagItemSchema = SchemaFactory.createForClass(FlagItemSubdocument);
 

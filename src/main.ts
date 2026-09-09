@@ -23,6 +23,10 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Support base64 image and camera photo uploads
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ limit: '25mb', extended: true }));
+
   // Global prefix for API endpoints
   app.setGlobalPrefix('api/v1');
 

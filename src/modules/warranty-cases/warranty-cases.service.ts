@@ -1,3 +1,4 @@
+
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -119,6 +120,11 @@ export class AddEvidenceDto {
   @IsOptional()
   @IsNumber()
   durationSeconds?: number;
+
+  @ApiPropertyOptional({ example: 'Cleaned camera lens and retook with torch enabled' })
+  @IsOptional()
+  @IsString()
+  technicianNote?: string;
 }
 
 export class AddVoiceNoteDto {
@@ -180,7 +186,7 @@ export class WarrantyCasesService implements OnModuleInit {
     @InjectModel(WarrantyCase.name) private caseModel: Model<WarrantyCaseDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private brandPacksService: BrandPacksService,
-  ) {}
+  ) { }
 
   async onModuleInit() {
     const count = await this.caseModel.countDocuments();
@@ -548,12 +554,25 @@ export class WarrantyCasesService implements OnModuleInit {
     warrantyCase.flagHistory.forEach((f) => {
       if (f.evidenceRuleKey === dto.ruleKey && !f.resolvedAt) {
         f.resolvedAt = new Date().toISOString();
+        if (dto.technicianNote) {
+          f.technicianNote = dto.technicianNote;
+        }
       }
     });
 
+    const hasUnresolvedFlags = warrantyCase.flagHistory.some((f) => !f.resolvedAt);
+    if (!hasUnresolvedFlags && warrantyCase.status === 'Flagged') {
+      warrantyCase.status = 'Awaiting Review';
+      warrantyCase.checklistSummary.isReadyForSubmission = true;
+    } else if (hasUnresolvedFlags) {
+      warrantyCase.checklistSummary.isReadyForSubmission = false;
+    }
+
     warrantyCase.checklistSummary.completedMandatory = warrantyCase.evidenceItems.length;
-    warrantyCase.checklistSummary.isReadyForSubmission =
-      warrantyCase.checklistSummary.completedMandatory >= warrantyCase.checklistSummary.totalMandatory;
+
+    warrantyCase.markModified('flagHistory');
+    warrantyCase.markModified('evidenceItems');
+    warrantyCase.markModified('checklistSummary');
 
     return (await warrantyCase.save()).toObject();
   }
@@ -579,8 +598,19 @@ export class WarrantyCasesService implements OnModuleInit {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
+    const unresolvedFlags = warrantyCase.flagHistory?.filter((f) => !f.resolvedAt) || [];
+    if (unresolvedFlags.length > 0) {
+      const details = unresolvedFlags
+        .map((f) => `"${f.evidenceRuleKey}" (Reject Reason: ${f.reasonCode})`)
+        .join(', ');
+      throw new BadRequestException(
+        `Cannot submit case: ${unresolvedFlags.length} evidence reject reason(s) must be fixed first [${details}]. Please retake and replace the rejected photo(s).`
+      );
+    }
+
     warrantyCase.status = 'Awaiting Review';
     warrantyCase.checklistSummary.isReadyForSubmission = true;
+    warrantyCase.markModified('checklistSummary');
     return (await warrantyCase.save()).toObject();
   }
 
@@ -598,12 +628,25 @@ export class WarrantyCasesService implements OnModuleInit {
     } as any);
 
     warrantyCase.status = 'Flagged';
+    warrantyCase.checklistSummary.isReadyForSubmission = false;
+    warrantyCase.markModified('flagHistory');
+    warrantyCase.markModified('checklistSummary');
     return (await warrantyCase.save()).toObject();
   }
 
   async markSubmitted(caseId: string, dto: MarkSubmittedDto): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
+
+    const unresolvedFlags = warrantyCase.flagHistory?.filter((f) => !f.resolvedAt) || [];
+    if (unresolvedFlags.length > 0) {
+      const details = unresolvedFlags
+        .map((f) => `"${f.evidenceRuleKey}" (Reject Reason: ${f.reasonCode})`)
+        .join(', ');
+      throw new BadRequestException(
+        `Cannot mark as submitted to OEM: ${unresolvedFlags.length} reject reason(s) [${details}] are still unresolved. All discrepancies must be fixed before submission to OEM.`
+      );
+    }
 
     warrantyCase.claimNumber = dto.claimNumber;
     warrantyCase.status = 'Submitted';
