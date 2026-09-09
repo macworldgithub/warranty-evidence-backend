@@ -136,48 +136,45 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(dto: LoginDto): Promise<LoginResponseDto> {
-    const query: any = { email: dto.email.toLowerCase() };
-    if (dto.role) {
-      query.role = dto.role;
+    if (!dto.email || !dto.password) {
+      throw new BadRequestException('Email and password are required.');
     }
 
-    let user = await this.userModel.findOne(query).lean();
-    if (!user) {
-      user = await this.userModel.findOne({ email: dto.email.toLowerCase() }).lean();
+    // Step 1: Find user by email only
+    const userByEmail = await this.userModel.findOne({ email: dto.email.toLowerCase().trim() }).lean();
+
+    if (!userByEmail) {
+      throw new UnauthorizedException('No account found with this email address.');
     }
 
-    // Auto-create or fallback if mock dev login
-    if (!user) {
-      const selectedRole = dto.role || UserRole.ADMIN;
-      const defaultUser = await this.userModel.findOne({ role: selectedRole }).lean();
-      if (defaultUser) {
-        user = defaultUser;
-      } else {
-        const newUser = new this.userModel({
-          id: `usr_${Date.now()}`,
-          name: dto.email.split('@')[0].replace('.', ' '),
-          email: dto.email.toLowerCase(),
-          passwordHash: dto.password || 'Booran2026!',
-          role: selectedRole,
-          defaultSiteId: 'site_cranbourne_byd',
-          authorizedSiteIds: ['site_cranbourne_byd'],
-          isActive: true,
-        });
-        user = (await newUser.save()).toObject();
-      }
+    // Step 2: Validate password
+    if (userByEmail.passwordHash !== dto.password) {
+      throw new UnauthorizedException('Incorrect password. Please try again.');
+    }
+
+    // Step 3: Validate role if provided
+    if (dto.role && userByEmail.role !== dto.role) {
+      throw new UnauthorizedException(
+        `This account is registered as ${userByEmail.role}. Please select the correct role.`,
+      );
+    }
+
+    // Step 4: Check account is active
+    if (userByEmail.isActive === false) {
+      throw new UnauthorizedException('Your account has been deactivated. Please contact your administrator.');
     }
 
     const profile: UserProfileDto = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: (user.role === 'TECHNICIAN' ? UserRole.TECHNICIAN : UserRole.ADMIN),
-      defaultSiteId: user.defaultSiteId || 'site_cranbourne_byd',
-      authorizedSiteIds: user.authorizedSiteIds || ['site_cranbourne_byd'],
+      id: userByEmail.id,
+      name: userByEmail.name,
+      email: userByEmail.email,
+      role: userByEmail.role as UserRole,
+      defaultSiteId: userByEmail.defaultSiteId || 'site_cranbourne_byd',
+      authorizedSiteIds: userByEmail.authorizedSiteIds || ['site_cranbourne_byd'],
     };
 
     return {
-      accessToken: `jwt_token_${Date.now()}_${user.id}`,
+      accessToken: `jwt_token_${Date.now()}_${userByEmail.id}`,
       user: profile,
     };
   }
