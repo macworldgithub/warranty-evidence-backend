@@ -6,10 +6,14 @@ import { BrandPacksModule } from '../brand-packs/brand-packs.module';
 import { SitesModule } from '../sites/sites.module';
 import { BrandsModule } from '../brands/brands.module';
 import { WarrantyCase, WarrantyCaseSchema } from '../../schemas/warranty-case.schema';
+import { User, UserSchema } from '../../schemas/user.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: WarrantyCase.name, schema: WarrantyCaseSchema }]),
+    MongooseModule.forFeature([
+      { name: WarrantyCase.name, schema: WarrantyCaseSchema },
+      { name: User.name, schema: UserSchema },
+    ]),
     BrandPacksModule,
     SitesModule,
     BrandsModule,

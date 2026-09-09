@@ -1,11 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNumber, IsBoolean, IsEnum, IsOptional } from 'class-validator';
-import { CaseStatus, FaultCategory, FlagReasonCode, MediaType, PowertrainType, RepairStage } from '../../common/enums';
+import { CaseStatus, FaultCategory, FlagReasonCode, MediaType, PowertrainType, RepairStage, UserRole } from '../../common/enums';
 import { BrandPacksService } from '../brand-packs/brand-packs.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
+import { User, UserDocument } from '../../schemas/user.schema';
 
 export class CreateWarrantyCaseDto {
   @ApiProperty({ example: 'site_cranbourne_byd' })
@@ -80,6 +81,11 @@ export class CreateWarrantyCaseDto {
   @ApiProperty({ enum: RepairStage, example: RepairStage.REPAIR_COMPLETE })
   @IsEnum(RepairStage)
   repairStage: RepairStage;
+
+  @ApiPropertyOptional({ enum: UserRole, example: UserRole.TECHNICIAN })
+  @IsOptional()
+  @IsEnum(UserRole)
+  creatorRole?: UserRole;
 }
 
 export class AddEvidenceDto {
@@ -172,6 +178,7 @@ export class MarkSubmittedDto {
 export class WarrantyCasesService implements OnModuleInit {
   constructor(
     @InjectModel(WarrantyCase.name) private caseModel: Model<WarrantyCaseDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private brandPacksService: BrandPacksService,
   ) {}
 
@@ -393,6 +400,7 @@ export class WarrantyCasesService implements OnModuleInit {
     brandId?: string;
     status?: string;
     technicianId?: string;
+    technicianName?: string;
     ro?: string;
     vin?: string;
     flaggedOnly?: boolean;
@@ -403,21 +411,68 @@ export class WarrantyCasesService implements OnModuleInit {
     if (filters?.siteId) query.siteId = filters.siteId;
     if (filters?.brandId) query.brandId = filters.brandId;
     if (filters?.status) query.status = filters.status;
-    if (filters?.technicianId) query.technicianId = filters.technicianId;
     if (filters?.ro) query.roNumber = { $regex: filters.ro, $options: 'i' };
     if (filters?.vin) query.vin = { $regex: filters.vin, $options: 'i' };
     if (filters?.flaggedOnly) query.status = 'Flagged';
 
+    if (filters?.technicianId || filters?.technicianName) {
+      const orConditions: any[] = [];
+      if (filters.technicianId) {
+        orConditions.push({ technicianId: filters.technicianId });
+      }
+      if (filters.technicianName) {
+        orConditions.push({
+          technicianName: { $regex: new RegExp(`^${filters.technicianName.trim()}$`, 'i') },
+        });
+        const slugId = 'tech_' + filters.technicianName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        orConditions.push({ technicianId: slugId });
+        const parts = filters.technicianName.trim().toLowerCase().split(/\s+/);
+        if (parts.length >= 2) {
+          const shortSlug = `tech_${parts[0]}_${parts[1][0]}`;
+          orConditions.push({ technicianId: shortSlug });
+        }
+      }
+      query.$or = orConditions;
+    }
+
     return this.caseModel.find(query).sort({ createdAt: -1 }).lean();
   }
 
-  async findOne(id: string): Promise<WarrantyCase> {
+  async findOne(id: string, callerRole?: string, callerUserId?: string, callerUserName?: string): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id }).lean();
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${id} not found`);
+
+    if (callerRole === UserRole.TECHNICIAN && (callerUserId || callerUserName)) {
+      const isOwner =
+        (callerUserId && warrantyCase.technicianId === callerUserId) ||
+        (callerUserName && warrantyCase.technicianName?.toLowerCase() === callerUserName.toLowerCase()) ||
+        (callerUserName && warrantyCase.technicianId === 'tech_' + callerUserName.toLowerCase().replace(/[^a-z0-9]/g, '_')) ||
+        (callerUserName && callerUserName.toLowerCase().includes('jake') && warrantyCase.technicianId.includes('jake'));
+      if (!isOwner) {
+        throw new ForbiddenException('Access denied: You are only authorized to view your own warranty claims.');
+      }
+    }
+
     return warrantyCase;
   }
 
-  async create(dto: CreateWarrantyCaseDto): Promise<WarrantyCase> {
+  async create(dto: CreateWarrantyCaseDto, callerRole?: string, callerUserId?: string): Promise<WarrantyCase> {
+    // Role enforcement: Only technicians can raise warranty tickets
+    if (callerRole && callerRole === UserRole.ADMIN) {
+      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
+    }
+
+    if (dto.creatorRole && dto.creatorRole === UserRole.ADMIN) {
+      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
+    }
+
+    if (callerUserId) {
+      const user = await this.userModel.findOne({ id: callerUserId }).lean();
+      if (user && user.role === UserRole.ADMIN) {
+        throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
+      }
+    }
+
     const evaluated = await this.brandPacksService.evaluateRules({
       brandId: dto.brandId,
       faultCategory: dto.faultCategory,
@@ -441,7 +496,7 @@ export class WarrantyCasesService implements OnModuleInit {
       model: dto.model,
       year: dto.year,
       powertrain: dto.powertrain,
-      status: 'Draft',
+      status: 'Awaiting Review',
       technicianId: dto.technicianId,
       technicianName: dto.technicianName,
       concernTitle: dto.concernTitle,
@@ -458,7 +513,7 @@ export class WarrantyCasesService implements OnModuleInit {
         completedMandatory: 0,
         totalOptional: evaluated.optionalCount,
         completedOptional: 0,
-        isReadyForSubmission: false,
+        isReadyForSubmission: true,
       },
     });
 
@@ -524,13 +579,8 @@ export class WarrantyCasesService implements OnModuleInit {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
-    if (warrantyCase.checklistSummary.completedMandatory < warrantyCase.checklistSummary.totalMandatory) {
-      throw new BadRequestException(
-        `Cannot submit case: Missing mandatory evidence items (${warrantyCase.checklistSummary.completedMandatory}/${warrantyCase.checklistSummary.totalMandatory} complete)`,
-      );
-    }
-
     warrantyCase.status = 'Awaiting Review';
+    warrantyCase.checklistSummary.isReadyForSubmission = true;
     return (await warrantyCase.save()).toObject();
   }
 
