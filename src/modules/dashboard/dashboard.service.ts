@@ -125,13 +125,23 @@ export class DashboardService {
   async getSitePerformance(): Promise<SitePerformanceDto[]> {
     const sites = await this.siteModel.find({ isActive: true }).lean();
 
-    return sites.map((site) => ({
-      siteId: site.id,
-      siteName: site.name,
-      totalCases: site.id === 'site_cranbourne_byd' ? 68 : site.id === 'site_dandenong_multi' ? 42 : 24,
-      firstTimePassRate: site.id === 'site_cranbourne_byd' ? 94.8 : 88.5,
-      flaggedCount: site.id === 'site_cranbourne_byd' ? 2 : 4,
-      avgHoursToSubmit: 2.8,
-    }));
+    const results: SitePerformanceDto[] = [];
+    for (const site of sites) {
+      const [totalCases, flaggedCount] = await Promise.all([
+        this.caseModel.countDocuments({ siteId: site.id }),
+        this.caseModel.countDocuments({ siteId: site.id, status: 'Flagged' }),
+      ]);
+
+      results.push({
+        siteId: site.id,
+        siteName: site.name,
+        totalCases: totalCases || 0,
+        firstTimePassRate: site.id === 'site_cranbourne_byd' ? 94.8 : 88.5,
+        flaggedCount,
+        avgHoursToSubmit: 2.8,
+      });
+    }
+
+    return results;
   }
 }
