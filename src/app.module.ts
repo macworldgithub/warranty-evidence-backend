@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { StorageModule } from './common/storage/storage.module';
 import { SitesModule } from './modules/sites/sites.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { BrandPacksModule } from './modules/brand-packs/brand-packs.module';
@@ -49,6 +50,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     NotificationsModule,
     SubmissionPackModule,
     DashboardModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [AppService],

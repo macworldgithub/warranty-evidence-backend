@@ -6,6 +6,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNumber, IsBoolean, IsEnum, IsOptional } from 'class-validator';
 import { CaseStatus, FaultCategory, FlagReasonCode, MediaType, PowertrainType, RepairStage, UserRole } from '../../common/enums';
 import { BrandPacksService } from '../brand-packs/brand-packs.service';
+import { StorageService } from '../../common/storage/storage.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
 import { User, UserDocument } from '../../schemas/user.schema';
 
@@ -186,6 +187,7 @@ export class WarrantyCasesService implements OnModuleInit {
     @InjectModel(WarrantyCase.name) private caseModel: Model<WarrantyCaseDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private brandPacksService: BrandPacksService,
+    private storageService: StorageService,
   ) { }
 
   async onModuleInit() {
@@ -925,6 +927,101 @@ export class WarrantyCasesService implements OnModuleInit {
     });
 
     return (await newCase.save()).toObject();
+  }
+
+  // ─── Real file upload — multipart/form-data ──────────────────────────────
+  async uploadEvidence(
+    caseId: string,
+    file: Express.Multer.File,
+    ruleKey: string,
+    evidenceName: string,
+    ocrExtractedText?: string,
+  ): Promise<WarrantyCase> {
+    const warrantyCase = await this.caseModel.findOne({ id: caseId });
+    if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
+
+    // Validate MIME type
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/pdf'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `File type "${file.mimetype}" is not allowed. Accepted: JPEG, PNG, WebP, MP4, WebM, PDF`,
+      );
+    }
+
+    // Derive OEM filename: {roNumber}{RuleDescriptor}.{ext}
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'application/pdf': 'pdf',
+    };
+    const ext = extMap[file.mimetype] ?? 'bin';
+    const descriptor = ruleKey
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('');
+    const oemFileName = `${warrantyCase.roNumber}${descriptor}.${ext}`;
+
+    // Determine mediaType enum
+    const mediaTypeMap: Record<string, string> = {
+      'image/jpeg': 'image', 'image/png': 'image', 'image/webp': 'image',
+      'video/mp4': 'video', 'video/webm': 'video',
+      'application/pdf': 'document',
+    };
+    const mediaType = mediaTypeMap[file.mimetype] ?? 'document';
+
+    // Upload to S3 or local disk
+    const result = await this.storageService.uploadFile(
+      file.buffer,
+      file.mimetype,
+      oemFileName,
+      caseId,
+    );
+
+    // Build evidence subdoc
+    const newEvidence: any = {
+      id: `ev_${Date.now()}`,
+      ruleKey,
+      name: evidenceName || oemFileName,
+      mediaType,
+      storageUrl: result.url,
+      thumbnailUrl: result.thumbnailUrl,
+      oemFileName: result.oemFileName,
+      uploadedAt: new Date().toISOString(),
+      ocrExtractedText,
+      ocrConfidence: ocrExtractedText ? 95 : undefined,
+      isVerifiedByClerk: false,
+    };
+
+    // Replace existing evidence for same ruleKey or append
+    const existingIdx = warrantyCase.evidenceItems.findIndex((e) => e.ruleKey === ruleKey);
+    if (existingIdx >= 0) {
+      warrantyCase.evidenceItems[existingIdx] = newEvidence;
+    } else {
+      warrantyCase.evidenceItems.push(newEvidence);
+    }
+
+    // Auto-resolve flags for this ruleKey
+    warrantyCase.flagHistory.forEach((f) => {
+      if (f.evidenceRuleKey === ruleKey && !f.resolvedAt) {
+        f.resolvedAt = new Date().toISOString();
+      }
+    });
+
+    const hasUnresolvedFlags = warrantyCase.flagHistory.some((f) => !f.resolvedAt);
+    if (!hasUnresolvedFlags && warrantyCase.status === 'Flagged') {
+      warrantyCase.status = 'Awaiting Review';
+      warrantyCase.checklistSummary.isReadyForSubmission = true;
+    }
+
+    warrantyCase.checklistSummary.completedMandatory = warrantyCase.evidenceItems.length;
+    warrantyCase.markModified('evidenceItems');
+    warrantyCase.markModified('flagHistory');
+    warrantyCase.markModified('checklistSummary');
+
+    return (await warrantyCase.save()).toObject();
   }
 
   async addEvidence(caseId: string, dto: AddEvidenceDto): Promise<WarrantyCase> {

@@ -20,6 +20,12 @@ export class EvidenceItemSubdocument {
   @Prop({ required: true })
   storageUrl: string;
 
+  @Prop()
+  thumbnailUrl?: string;
+
+  @Prop()
+  oemFileName?: string;
+
   @Prop({ required: true })
   uploadedAt: string;
 

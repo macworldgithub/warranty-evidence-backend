@@ -7,6 +7,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import * as path from 'path';
 import * as express from 'express';
+import * as fs from 'fs';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,6 +16,12 @@ async function bootstrap() {
   const frontendPath = path.resolve(__dirname, '../../frontend');
   app.use(express.static(frontendPath));
   app.use('/portal', express.static(frontendPath));
+
+  // Serve local evidence uploads at /uploads/*
+  // Used when AWS S3 is not configured (LOCAL_UPLOAD_PATH fallback)
+  const uploadsDir = path.resolve(process.env.LOCAL_UPLOAD_PATH ?? './uploads');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use('/uploads', express.static(uploadsDir));
 
   // Enable CORS for frontend and mobile PWA
   app.enableCors({

@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Body, Param, Query, Headers, ForbiddenException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Param, Query, Headers, ForbiddenException, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import {
   WarrantyCasesService,
   CreateWarrantyCaseDto,
@@ -45,7 +47,7 @@ export class WarrantyCasesController {
     let activeTechId = technicianId;
     let activeTechName = technicianName;
 
-    if (xUserRole === UserRole.TECHNICIAN) {
+    if (xUserRole?.toUpperCase() === UserRole.TECHNICIAN) {
       if (!activeTechId && xUserId) activeTechId = xUserId;
       if (!activeTechName && xUserName) activeTechName = xUserName;
 
@@ -118,12 +120,55 @@ export class WarrantyCasesController {
     @Body() dto: AddEvidenceDto,
     @Headers('x-user-role') xUserRole?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole && xUserRole !== UserRole.TECHNICIAN) {
+    if (xUserRole && xUserRole.toUpperCase() !== UserRole.TECHNICIAN) {
       throw new ForbiddenException(
         'Access denied: Admins and Clerks are only authorized to review and flag cases, not upload or retake images. Evidence capture is strictly reserved for Technicians.',
       );
     }
     return this.casesService.addEvidence(id, dto);
+  }
+
+  @Post(':id/evidence/upload')
+  @ApiOperation({
+    summary: 'Upload real evidence file (multipart/form-data) — stores to S3 or local disk, auto-names OEM filename',
+    description: `Accepts a binary file upload via multipart/form-data.\n\n**Storage:** S3 if AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_S3_BUCKET are set in env; otherwise saved to local /uploads/ folder.\n\n**Auto-naming:** OEM filename is derived as \`{roNumber}{RuleDescriptor}.{ext}\` at upload time.\n\n**Thumbnail:** Generated automatically for image uploads (400px wide JPEG).`,
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'ruleKey'],
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'Evidence file (JPEG/PNG/WebP/MP4/WebM/PDF)' },
+        ruleKey: { type: 'string', example: 'fault_closeup', description: 'Brand Pack rule key this file satisfies' },
+        evidenceName: { type: 'string', example: 'Fault Close-up Photo', description: 'Human-readable label (optional)' },
+        ocrExtractedText: { type: 'string', example: 'LGXCE4C86P0019283', description: 'OCR text extracted on device (optional)' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),            // keep in memory — we stream to S3 or disk ourselves
+      limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB max (videos)
+    }),
+  )
+  async uploadEvidence(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('ruleKey') ruleKey: string,
+    @Body('evidenceName') evidenceName?: string,
+    @Body('ocrExtractedText') ocrExtractedText?: string,
+    @Headers('x-user-role') xUserRole?: string,
+  ): Promise<WarrantyCase> {
+    if (xUserRole && xUserRole.toUpperCase() !== UserRole.TECHNICIAN) {
+      throw new ForbiddenException(
+        'Access denied: Evidence upload is reserved for Technicians.',
+      );
+    }
+    if (!file) throw new BadRequestException('No file received. Send the file as multipart/form-data field named "file".');
+    if (!ruleKey) throw new BadRequestException('ruleKey is required.');
+
+    return this.casesService.uploadEvidence(id, file, ruleKey, evidenceName ?? ruleKey, ocrExtractedText);
   }
 
   @Post(':id/voice-notes')
@@ -142,7 +187,7 @@ export class WarrantyCasesController {
     @Param('id') id: string,
     @Headers('x-user-role') xUserRole?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole && xUserRole !== UserRole.TECHNICIAN) {
+    if (xUserRole && xUserRole.toUpperCase() !== UserRole.TECHNICIAN) {
       throw new ForbiddenException('Access denied: Only technicians can submit cases from workshop to review.');
     }
     return this.casesService.submitFromWorkshop(id);
