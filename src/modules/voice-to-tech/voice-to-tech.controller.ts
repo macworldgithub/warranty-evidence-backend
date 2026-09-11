@@ -596,11 +596,12 @@ const DEMO_HTML = `<!DOCTYPE html>
       };
     }
 
-    // ── Option 2: Live WebSocket Mic Stream ──────────────
+    // ── Option 2: Live WebSocket Mic Stream (Linear16 16kHz Mono - VMA standard) ──
     let micWs = null;
-    let mediaRecorder = null;
     let audioStream = null;
     let audioContext = null;
+    let sourceNode = null;
+    let scriptProcessor = null;
     let analyserNode = null;
     let animFrame = null;
     let clientKeepAlive = null;
@@ -608,7 +609,7 @@ const DEMO_HTML = `<!DOCTYPE html>
     async function toggleMicStream() {
       const btn = document.getElementById('micBtn');
 
-      if (micWs || mediaRecorder) {
+      if (micWs || scriptProcessor) {
         stopMicStream();
         return;
       }
@@ -618,14 +619,15 @@ const DEMO_HTML = `<!DOCTYPE html>
       const dot = document.getElementById('micDot');
       const stats = document.getElementById('micStats');
 
-      logDebug('Requesting microphone access...');
+      logDebug('Requesting microphone access (16kHz)...');
       try {
         audioStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
-            sampleRate: 48000,
+            sampleRate: 16000,
             echoCancellation: true,
             noiseSuppression: true,
+            autoGainControl: true,
           },
         });
         const track = audioStream.getAudioTracks()[0];
@@ -633,42 +635,15 @@ const DEMO_HTML = `<!DOCTYPE html>
         logDebug('Microphone access granted: ' + (track.label || 'Active'), 'ok');
       } catch (err) {
         logDebug('Microphone error: ' + err.message, 'err');
-        alert('Microphone access error: ' + err.message + '\\nPlease ensure microphone permissions are allowed in your browser.');
+        alert('Microphone access error: ' + err.message + '\\nPlease ensure microphone permissions are allowed.');
         return;
-      }
-
-      // Setup audio level meter
-      try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const source = audioContext.createMediaStreamSource(audioStream);
-        analyserNode = audioContext.createAnalyser();
-        analyserNode.fftSize = 256;
-        source.connect(analyserNode);
-
-        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-        const updateMeter = () => {
-          if (!analyserNode) return;
-          analyserNode.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-          }
-          const avg = sum / dataArray.length;
-          const pct = Math.min(100, Math.round((avg / 128) * 100));
-          document.getElementById('micMeterBar').style.width = pct + '%';
-          document.getElementById('micVolPercent').innerText = pct + '%';
-          animFrame = requestAnimationFrame(updateMeter);
-        };
-        updateMeter();
-      } catch (e) {
-        logDebug('Volume meter init warning: ' + e.message);
       }
 
       box.innerHTML = '';
       btn.innerHTML = '<span>⏹️ Stop Dictation</span>';
       btn.classList.add('btn-stop');
       dot.className = 'status-dot status-recording';
-      status.innerText = 'Connecting to Deepgram stream...';
+      status.innerText = 'Connecting to backend WS...';
 
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = proto + '//' + location.host + '/api/v1/voice-to-tech/live';
@@ -681,89 +656,92 @@ const DEMO_HTML = `<!DOCTYPE html>
       let chunksSent = 0;
 
       micWs.onopen = () => {
-        logDebug('Live stream connected! Starting audio recorder...', 'ok');
-        status.innerText = 'Listening live 🎙️ (Speak now)';
+        logDebug('Live stream connected! Starting Linear16 PCM audio processor...', 'ok');
+        status.innerText = 'Listening live 🎙️ (Speak continuously)';
 
-        // Periodic KeepAlive every 3 seconds to prevent timeout
+        // Periodic KeepAlive every 5 seconds
         clientKeepAlive = setInterval(() => {
           if (micWs && micWs.readyState === WebSocket.OPEN) {
             micWs.send(JSON.stringify({ type: 'KeepAlive' }));
           }
-        }, 3000);
-
-        // Determine best supported mimeType
-        let mimeType = '';
-        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          mimeType = 'audio/webm;codecs=opus';
-        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-          mimeType = 'audio/webm';
-        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          mimeType = 'audio/mp4';
-        }
-        logDebug('Audio encoding: ' + (mimeType || 'default'));
+        }, 5000);
 
         try {
-          mediaRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : undefined);
+          audioContext = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 16000,
+          });
 
-          mediaRecorder.ondataavailable = async (e) => {
-            if (e.data && e.data.size > 0 && micWs && micWs.readyState === WebSocket.OPEN) {
-              const arrayBuffer = await e.data.arrayBuffer();
-              micWs.send(arrayBuffer);
-              chunksSent++;
-              if (chunksSent === 1) {
-                logDebug('First audio chunk transmitted (' + arrayBuffer.byteLength + ' bytes)', 'ok');
-              }
+          sourceNode = audioContext.createMediaStreamSource(audioStream);
+
+          // Setup visual volume meter
+          analyserNode = audioContext.createAnalyser();
+          analyserNode.fftSize = 256;
+          sourceNode.connect(analyserNode);
+
+          const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+          const updateMeter = () => {
+            if (!analyserNode) return;
+            analyserNode.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            const avg = sum / dataArray.length;
+            const pct = Math.min(100, Math.round((avg / 128) * 100));
+            document.getElementById('micMeterBar').style.width = pct + '%';
+            document.getElementById('micVolPercent').innerText = pct + '%';
+            animFrame = requestAnimationFrame(updateMeter);
+          };
+          updateMeter();
+
+          // ScriptProcessor for pure Linear16 PCM (4096 samples = 256ms at 16kHz)
+          scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+          scriptProcessor.onaudioprocess = (e) => {
+            if (!micWs || micWs.readyState !== WebSocket.OPEN) return;
+
+            const input = e.inputBuffer.getChannelData(0);
+            // Convert Float32Array [-1.0, 1.0] to 16-bit signed PCM (Int16Array)
+            const pcm = new Int16Array(input.length);
+            for (let i = 0; i < input.length; i++) {
+              const s = Math.max(-1, Math.min(1, input[i]));
+              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+
+            micWs.send(pcm.buffer);
+            chunksSent++;
+            if (chunksSent === 1) {
+              logDebug('Streaming Linear16 PCM chunks (256ms, 8192 bytes)...', 'ok');
             }
           };
 
-          mediaRecorder.onerror = (recErr) => {
-            logDebug('MediaRecorder error: ' + recErr.error?.message, 'err');
-          };
+          sourceNode.connect(scriptProcessor);
+          scriptProcessor.connect(audioContext.destination);
+          logDebug('Linear16 PCM processor active (16000Hz mono)', 'ok');
 
-          // Capture 250ms audio slices for low latency
-          mediaRecorder.start(250);
-          logDebug('Streaming microphone chunks (250ms slices)...', 'ok');
-
-        } catch (recInitErr) {
-          logDebug('Failed to start MediaRecorder: ' + recInitErr.message, 'err');
+        } catch (audioErr) {
+          logDebug('Audio processor error: ' + audioErr.message, 'err');
         }
       };
 
       micWs.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          let text = '';
-          let isFinal = false;
-          let confidence = 98;
 
-          if (data.channel?.alternatives?.[0]) {
-            text = (data.channel.alternatives[0].transcript || '').trim();
-            isFinal = data.is_final ?? false;
-            confidence = Math.round((data.channel.alternatives[0].confidence ?? 0) * 100);
-          } else if (data.type === 'transcript') {
-            text = (data.transcript || '').trim();
-            isFinal = data.is_final ?? false;
-            confidence = data.confidence ?? 98;
-          } else if (data.type === 'connected') {
+          if (data.type === 'connected') {
             logDebug('Deepgram session confirmed: ' + data.message, 'ok');
             return;
           }
 
-          if (text) {
-            if (isFinal) {
-              fullFinal += (fullFinal ? ' ' : '') + text;
-              totalWords = fullFinal.split(/\\s+/).filter(Boolean).length;
-              stats.innerText = totalWords + ' words (' + confidence + '% conf)';
-              box.innerHTML = '<span class="transcript-final">' + fullFinal + '</span>';
-              logDebug('Transcribed: "' + text + '" (' + confidence + '%)', 'ok');
-            } else {
-              box.innerHTML = '<span class="transcript-final">' + fullFinal + '</span>' +
-                              '<span class="transcript-interim"> ' + text + '</span>';
-            }
-            box.scrollTop = box.scrollHeight;
-          } else if (data.error) {
-            logDebug('Server error: ' + data.error, 'err');
+          if (data.type === 'final') {
+            fullFinal += (fullFinal ? ' ' : '') + data.transcript;
+            totalWords = fullFinal.split(/\\s+/).filter(Boolean).length;
+            stats.innerText = totalWords + ' words (' + data.confidence + '% conf)';
+            box.innerHTML = '<span class="transcript-final">' + fullFinal + '</span>';
+            logDebug('Final: "' + data.transcript + '" (' + data.confidence + '%)', 'ok');
+          } else if (data.type === 'interim') {
+            box.innerHTML = '<span class="transcript-final">' + fullFinal + '</span>' +
+                            '<span class="transcript-interim"> ' + data.transcript + '</span>';
           }
+          box.scrollTop = box.scrollHeight;
         } catch (e) {
           console.error(e);
         }
@@ -794,8 +772,16 @@ const DEMO_HTML = `<!DOCTYPE html>
         cancelAnimationFrame(animFrame);
         animFrame = null;
       }
+      if (scriptProcessor) {
+        try { scriptProcessor.disconnect(); } catch (e) {}
+        scriptProcessor = null;
+      }
+      if (sourceNode) {
+        try { sourceNode.disconnect(); } catch (e) {}
+        sourceNode = null;
+      }
       if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close();
+        try { audioContext.close(); } catch (e) {}
         audioContext = null;
       }
       analyserNode = null;
@@ -807,25 +793,23 @@ const DEMO_HTML = `<!DOCTYPE html>
       const btn = document.getElementById('micBtn');
       logDebug('Stopping dictation...');
 
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        try { mediaRecorder.stop(); } catch (e) {}
-        mediaRecorder = null;
-      }
+      cleanupAudio();
+
       if (audioStream) {
         audioStream.getTracks().forEach(t => t.stop());
         audioStream = null;
       }
+
       if (micWs && micWs.readyState === WebSocket.OPEN) {
         micWs.send(JSON.stringify({ type: 'CloseStream' }));
         setTimeout(() => {
           if (micWs) micWs.close();
           micWs = null;
-        }, 600);
+        }, 500);
       } else {
         micWs = null;
       }
 
-      cleanupAudio();
       btn.innerHTML = '<span>🎤 Start Dictation (Live WS)</span>';
       btn.classList.remove('btn-stop');
       document.getElementById('micStatus').innerText = 'Stopped';

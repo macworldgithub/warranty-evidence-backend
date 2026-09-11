@@ -57,10 +57,15 @@ export class VoiceToTechGateway
     const queryParams = new URLSearchParams({
       model: 'nova-2',
       language: 'en-AU',
-      smart_format: 'true',
       punctuate: 'true',
+      smart_format: 'true',
       interim_results: 'true',
       endpointing: '300',
+      diarize: 'true',
+      filler_words: 'false',
+      channels: '1',
+      encoding: 'linear16',
+      sample_rate: '16000',
     }).toString();
 
     let dgWs: WebSocket | null = null;
@@ -80,23 +85,23 @@ export class VoiceToTechGateway
         headers: { Authorization: `Token ${apiKey}` },
       });
 
-      // Keep connection alive
+      // Keep connection alive every 8 seconds (matching VMA keepalive)
       keepAliveInterval = setInterval(() => {
         if (dgWs && dgWs.readyState === WebSocket.OPEN) {
           dgWs.send(JSON.stringify({ type: 'KeepAlive' }));
         }
-      }, 4000);
+      }, 8000);
 
       dgWs.on('open', () => {
         isDgOpen = true;
-        this.logger.log('Deepgram live connection established');
+        this.logger.log('Deepgram live connection established (linear16 / 16000Hz)');
         dgWs!.send(JSON.stringify({ type: 'KeepAlive' }));
 
         clientWs.send(
           JSON.stringify({
             type: 'connected',
             message:
-              'Deepgram Nova-2 live stream ready. Start speaking or streaming audio chunks.',
+              'Deepgram Nova-2 live stream ready (Linear16 16kHz). Start speaking.',
           }),
         );
 
@@ -115,7 +120,7 @@ export class VoiceToTechGateway
 
       if (isBin) {
         const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-        if (isDgOpen && dgWs.readyState === WebSocket.OPEN) {
+        if (isDgOpen && dgWs && dgWs.readyState === WebSocket.OPEN) {
           dgWs.send(buf);
         } else {
           pendingBuffer.push(buf);
@@ -128,43 +133,46 @@ export class VoiceToTechGateway
             parsed.action === 'stop' ||
             parsed.type === 'close'
           ) {
-            if (dgWs.readyState === WebSocket.OPEN) {
+            if (dgWs && dgWs.readyState === WebSocket.OPEN) {
               dgWs.send(JSON.stringify({ type: 'CloseStream' }));
             }
           } else if (parsed.type === 'KeepAlive') {
-            if (dgWs.readyState === WebSocket.OPEN) {
+            if (dgWs && dgWs.readyState === WebSocket.OPEN) {
               dgWs.send(JSON.stringify({ type: 'KeepAlive' }));
             }
           }
         } catch {
-          if (dgWs.readyState === WebSocket.OPEN) {
+          if (dgWs && dgWs.readyState === WebSocket.OPEN) {
             dgWs.send(data);
           }
         }
       }
     });
 
-    // Deepgram -> Client: forward transcription events
+    // Deepgram -> Client: forward transcription events (matching VMA structure)
     dgWs.on('message', (msg: any) => {
       if (clientWs.readyState === WebSocket.OPEN) {
         try {
           const parsed = JSON.parse(msg.toString());
           const alt = parsed?.channel?.alternatives?.[0];
-          if (alt) {
-            const text = alt.transcript || '';
-            if (text.length > 0 || parsed.is_final) {
-              clientWs.send(
-                JSON.stringify({
-                  type: 'transcript',
-                  transcript: text,
-                  confidence: Math.round((alt.confidence ?? 0) * 100 * 10) / 10,
-                  is_final: parsed.is_final ?? false,
-                  speech_final: parsed.speech_final ?? false,
-                  words: alt.words ?? [],
-                }),
-              );
-            }
-          }
+          const transcript: string = alt?.transcript ?? '';
+          const isFinal: boolean = parsed?.is_final === true;
+          const speaker: number | undefined = alt?.words?.[0]?.speaker;
+
+          // Guard: ignore empty transcripts (matching VMA)
+          if (!transcript.trim()) return;
+
+          clientWs.send(
+            JSON.stringify({
+              type: isFinal ? 'final' : 'interim',
+              transcript: transcript.trim(),
+              is_final: isFinal,
+              speech_final: parsed.speech_final ?? false,
+              confidence: Math.round((alt.confidence ?? 0) * 100 * 10) / 10,
+              speaker,
+              words: alt.words ?? [],
+            }),
+          );
         } catch {
           clientWs.send(msg.toString());
         }
