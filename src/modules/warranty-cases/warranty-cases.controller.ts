@@ -201,9 +201,13 @@ export class WarrantyCasesController {
     @Param('id') id: string,
     @Body() dto: FlagCaseDto,
     @Headers('x-user-role') xUserRole?: string,
+    @Headers('x-user-name') xUserName?: string,
   ): Promise<WarrantyCase> {
     if (xUserRole === UserRole.TECHNICIAN) {
       throw new ForbiddenException('Access denied: Technicians cannot flag cases. Flagging is reserved for Warranty Clerks and Admins.');
+    }
+    if (xUserName && (!dto.flaggedBy || dto.flaggedBy.includes('Sarah Jenkins'))) {
+      dto.flaggedBy = `${xUserName} (Warranty Admin)`;
     }
     return this.casesService.flagCase(id, dto);
   }

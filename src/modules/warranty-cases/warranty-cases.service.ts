@@ -7,6 +7,7 @@ import { IsString, IsNumber, IsBoolean, IsEnum, IsOptional } from 'class-validat
 import { CaseStatus, FaultCategory, FlagReasonCode, MediaType, PowertrainType, RepairStage, UserRole } from '../../common/enums';
 import { BrandPacksService } from '../brand-packs/brand-packs.service';
 import { StorageService } from '../../common/storage/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
 import { User, UserDocument } from '../../schemas/user.schema';
 
@@ -188,7 +189,40 @@ export class WarrantyCasesService implements OnModuleInit {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private brandPacksService: BrandPacksService,
     private storageService: StorageService,
+    private notificationsService: NotificationsService,
   ) { }
+
+  private async getAdminEmails(): Promise<string[]> {
+    try {
+      const admins = await this.userModel.find({ role: UserRole.ADMIN, isActive: true }).lean();
+      const emails = admins.map((a) => a.email).filter(Boolean);
+      if (emails.length > 0) {
+        return emails;
+      }
+    } catch (err: any) {
+      console.error('[WarrantyCasesService] Error retrieving admin emails:', err?.message);
+    }
+    return ['admin@booran.com.au'];
+  }
+
+  private async getTechnicianEmail(technicianId: string, technicianName?: string): Promise<string> {
+    try {
+      const techUser = await this.userModel.findOne({
+        $or: [
+          { id: technicianId },
+          ...(technicianName ? [{ name: new RegExp(`^${technicianName}$`, 'i') }] : []),
+          ...(technicianName ? [{ email: new RegExp(technicianName.split(' ')[0], 'i') }] : []),
+        ],
+      }).lean();
+
+      if (techUser?.email) {
+        return techUser.email;
+      }
+    } catch (err: any) {
+      console.error('[WarrantyCasesService] Error finding technician email:', err?.message);
+    }
+    return 'technician@booran.com.au';
+  }
 
   async onModuleInit() {
     {
@@ -926,7 +960,30 @@ export class WarrantyCasesService implements OnModuleInit {
       },
     });
 
-    return (await newCase.save()).toObject();
+    const savedCase = (await newCase.save()).toObject();
+
+    // Trigger asynchronous email alert to Admins (non-blocking)
+    this.getAdminEmails()
+      .then((adminEmails) => {
+        this.notificationsService.sendNewTicketRaisedAlert(
+          {
+            caseId: savedCase.id,
+            roNumber: savedCase.roNumber,
+            vin: savedCase.vin,
+            make: savedCase.make,
+            model: savedCase.model,
+            year: savedCase.year,
+            concernTitle: savedCase.concernTitle,
+            faultCategory: savedCase.faultCategory,
+            technicianName: savedCase.technicianName,
+            siteName: savedCase.siteName,
+          },
+          adminEmails,
+        ).catch((err) => console.error('[Notifications] Failed to send new ticket alert:', err?.message));
+      })
+      .catch(() => {});
+
+    return savedCase;
   }
 
   // ─── Real file upload — multipart/form-data ──────────────────────────────
@@ -1109,7 +1166,29 @@ export class WarrantyCasesService implements OnModuleInit {
     warrantyCase.status = 'Awaiting Review';
     warrantyCase.checklistSummary.isReadyForSubmission = true;
     warrantyCase.markModified('checklistSummary');
-    return (await warrantyCase.save()).toObject();
+    const savedCase = (await warrantyCase.save()).toObject();
+
+    this.getAdminEmails()
+      .then((adminEmails) => {
+        this.notificationsService.sendNewTicketRaisedAlert(
+          {
+            caseId: savedCase.id,
+            roNumber: savedCase.roNumber,
+            vin: savedCase.vin,
+            make: savedCase.make,
+            model: savedCase.model,
+            year: savedCase.year,
+            concernTitle: savedCase.concernTitle,
+            faultCategory: savedCase.faultCategory,
+            technicianName: savedCase.technicianName,
+            siteName: savedCase.siteName,
+          },
+          adminEmails,
+        ).catch((err) => console.error('[Notifications] Failed to send workshop submission alert:', err?.message));
+      })
+      .catch(() => {});
+
+    return savedCase;
   }
 
   async flagCase(caseId: string, dto: FlagCaseDto): Promise<WarrantyCase> {
@@ -1129,7 +1208,29 @@ export class WarrantyCasesService implements OnModuleInit {
     warrantyCase.checklistSummary.isReadyForSubmission = false;
     warrantyCase.markModified('flagHistory');
     warrantyCase.markModified('checklistSummary');
-    return (await warrantyCase.save()).toObject();
+    const savedCase = (await warrantyCase.save()).toObject();
+
+    this.getTechnicianEmail(savedCase.technicianId, savedCase.technicianName)
+      .then((techEmail) => {
+        this.notificationsService.sendCaseRejectedOrFlaggedAlert(
+          {
+            caseId: savedCase.id,
+            roNumber: savedCase.roNumber,
+            evidenceRuleKey: dto.evidenceRuleKey,
+            reasonCode: dto.reasonCode,
+            instruction: dto.instruction,
+            flaggedBy: dto.flaggedBy,
+            vin: savedCase.vin,
+            make: savedCase.make,
+            model: savedCase.model,
+            technicianName: savedCase.technicianName,
+          },
+          techEmail,
+        ).catch((err) => console.error('[Notifications] Failed to send flag alert:', err?.message));
+      })
+      .catch(() => {});
+
+    return savedCase;
   }
 
   async markSubmitted(caseId: string, dto: MarkSubmittedDto): Promise<WarrantyCase> {
@@ -1153,7 +1254,27 @@ export class WarrantyCasesService implements OnModuleInit {
       warrantyCase.clerkNotes = dto.clerkNote;
     }
 
-    return (await warrantyCase.save()).toObject();
+    const savedCase = (await warrantyCase.save()).toObject();
+
+    this.getTechnicianEmail(savedCase.technicianId, savedCase.technicianName)
+      .then((techEmail) => {
+        this.notificationsService.sendCaseAcceptedAlert(
+          {
+            caseId: savedCase.id,
+            roNumber: savedCase.roNumber,
+            claimNumber: savedCase.claimNumber || dto.claimNumber,
+            vin: savedCase.vin,
+            make: savedCase.make,
+            model: savedCase.model,
+            technicianName: savedCase.technicianName,
+            clerkNotes: savedCase.clerkNotes,
+          },
+          techEmail,
+        ).catch((err) => console.error('[Notifications] Failed to send claim accepted alert:', err?.message));
+      })
+      .catch(() => {});
+
+    return savedCase;
   }
 
   async addClerkNote(caseId: string, note: string): Promise<WarrantyCase> {
