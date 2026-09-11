@@ -1061,9 +1061,15 @@ export class WarrantyCasesService implements OnModuleInit {
     }
 
     // Auto-resolve flags for this ruleKey
+    const resolvedFlags: any[] = [];
     warrantyCase.flagHistory.forEach((f) => {
       if (f.evidenceRuleKey === ruleKey && !f.resolvedAt) {
         f.resolvedAt = new Date().toISOString();
+        resolvedFlags.push({
+          reasonCode: f.reasonCode,
+          instruction: f.instruction,
+          flaggedBy: f.flaggedBy,
+        });
       }
     });
 
@@ -1078,7 +1084,36 @@ export class WarrantyCasesService implements OnModuleInit {
     warrantyCase.markModified('flagHistory');
     warrantyCase.markModified('checklistSummary');
 
-    return (await warrantyCase.save()).toObject();
+    const savedCase = (await warrantyCase.save()).toObject();
+
+    // If one or more flags were resolved by this upload, notify Admin(s)
+    if (resolvedFlags.length > 0) {
+      const lastResolved = resolvedFlags[resolvedFlags.length - 1];
+      const remainingFlags = savedCase.flagHistory?.filter((f: any) => !f.resolvedAt)?.length || 0;
+
+      this.getAdminEmails()
+        .then((adminEmails) => {
+          this.notificationsService.sendFlagResolvedAdminAlert(
+            {
+              caseId: savedCase.id,
+              roNumber: savedCase.roNumber,
+              evidenceRuleKey: ruleKey,
+              evidenceName: evidenceName || newEvidence.name,
+              resolvedReasonCode: lastResolved.reasonCode,
+              originalInstruction: lastResolved.instruction,
+              technicianName: savedCase.technicianName,
+              vin: savedCase.vin,
+              make: savedCase.make,
+              model: savedCase.model,
+              remainingFlagsCount: remainingFlags,
+            },
+            adminEmails,
+          ).catch((err) => console.error('[Notifications] Failed to send flag resolved alert:', err?.message));
+        })
+        .catch(() => {});
+    }
+
+    return savedCase;
   }
 
   async addEvidence(caseId: string, dto: AddEvidenceDto): Promise<WarrantyCase> {
@@ -1106,12 +1141,18 @@ export class WarrantyCasesService implements OnModuleInit {
     }
 
     // Auto resolve flag for this rule if any
+    const resolvedFlags: any[] = [];
     warrantyCase.flagHistory.forEach((f) => {
       if (f.evidenceRuleKey === dto.ruleKey && !f.resolvedAt) {
         f.resolvedAt = new Date().toISOString();
         if (dto.technicianNote) {
           f.technicianNote = dto.technicianNote;
         }
+        resolvedFlags.push({
+          reasonCode: f.reasonCode,
+          instruction: f.instruction,
+          flaggedBy: f.flaggedBy,
+        });
       }
     });
 
@@ -1129,7 +1170,35 @@ export class WarrantyCasesService implements OnModuleInit {
     warrantyCase.markModified('evidenceItems');
     warrantyCase.markModified('checklistSummary');
 
-    return (await warrantyCase.save()).toObject();
+    const savedCase = (await warrantyCase.save()).toObject();
+
+    if (resolvedFlags.length > 0) {
+      const lastResolved = resolvedFlags[resolvedFlags.length - 1];
+      const remainingFlags = savedCase.flagHistory?.filter((f: any) => !f.resolvedAt)?.length || 0;
+
+      this.getAdminEmails()
+        .then((adminEmails) => {
+          this.notificationsService.sendFlagResolvedAdminAlert(
+            {
+              caseId: savedCase.id,
+              roNumber: savedCase.roNumber,
+              evidenceRuleKey: dto.ruleKey,
+              evidenceName: dto.name,
+              resolvedReasonCode: lastResolved.reasonCode,
+              originalInstruction: lastResolved.instruction,
+              technicianName: savedCase.technicianName,
+              vin: savedCase.vin,
+              make: savedCase.make,
+              model: savedCase.model,
+              remainingFlagsCount: remainingFlags,
+            },
+            adminEmails,
+          ).catch((err) => console.error('[Notifications] Failed to send flag resolved alert:', err?.message));
+        })
+        .catch(() => {});
+    }
+
+    return savedCase;
   }
 
   async addVoiceNote(caseId: string, dto: AddVoiceNoteDto): Promise<WarrantyCase> {

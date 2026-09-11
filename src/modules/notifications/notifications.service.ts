@@ -65,6 +65,22 @@ export interface CaseRejectedEmailParams {
   portalUrl?: string;
 }
 
+export interface FlagResolvedEmailParams {
+  caseId: string;
+  roNumber: string;
+  evidenceRuleKey: string;
+  evidenceName?: string;
+  resolvedReasonCode?: string;
+  originalInstruction?: string;
+  technicianName: string;
+  vin?: string;
+  make?: string;
+  model?: string;
+  remainingFlagsCount: number;
+  portalUrl?: string;
+}
+
+
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
@@ -427,6 +443,117 @@ export class NotificationsService implements OnModuleInit {
 
     return this.sendMail({
       to: technicianEmail,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  /**
+   * 4. Triggered when technician solves/replaces flagged evidence -> Sent to Admin(s)
+   */
+  async sendFlagResolvedAdminAlert(params: FlagResolvedEmailParams, adminEmails: string[]) {
+    if (!adminEmails || adminEmails.length === 0) {
+      this.logger.warn('[SMTP] No admin email recipients provided for flag resolved notification.');
+      return;
+    }
+
+    const appUrl = params.portalUrl || process.env.APP_URL || 'http://localhost:3000';
+    const caseUrl = `${appUrl}/cases/${params.caseId}`;
+
+    const subject = `[Booran Warranty] Flag Issue Corrected: RO #${params.roNumber} - ${params.evidenceName || params.evidenceRuleKey}`;
+
+    const humanReadableReason = params.resolvedReasonCode
+      ? params.resolvedReasonCode.replace(/_/g, ' ')
+      : 'Previous Discrepancy';
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 24px; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    .header { background: #0b192c; padding: 24px; text-align: center; }
+    .logo { color: #10b981; font-size: 20px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin: 0; }
+    .subhead { color: #94a3b8; font-size: 13px; margin-top: 4px; }
+    .badge-bar { background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 20px; font-size: 14px; font-weight: 600; color: #065f46; }
+    .content { padding: 24px; color: #1e293b; }
+    .title { font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 16px; color: #0f172a; }
+    .details-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .details-table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+    .label { color: #64748b; font-weight: 600; width: 38%; }
+    .val { color: #0f172a; font-weight: 500; }
+    .note-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 14px; font-size: 13px; color: #166534; margin-bottom: 24px; }
+    .note-box strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .btn-container { text-align: center; margin: 28px 0 16px; }
+    .btn { background: #10b981; color: #ffffff !important; padding: 12px 28px; font-size: 14px; font-weight: 600; border-radius: 6px; text-decoration: none; display: inline-block; }
+    .footer { background: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">Booran Warranty Evidence</div>
+      <div class="subhead">Evidence Compliance Alert</div>
+    </div>
+    <div class="badge-bar">
+      ✅ EVIDENCE UPDATED: Flag Issue Corrected by Technician
+    </div>
+    <div class="content">
+      <h2 class="title">Technician ${escapeHtml(params.technicianName)} has resolved the flagged evidence</h2>
+      <p style="font-size: 14px; color: #475569; line-height: 1.5; margin-top: 0;">
+        A replacement evidence item has been uploaded for <strong>RO #${escapeHtml(params.roNumber)}</strong> addressing the reviewer feedback. The ticket is now ready for your re-examination.
+      </p>
+
+      <table class="details-table">
+        <tr>
+          <td class="label">RO Number</td>
+          <td class="val"><strong>#${escapeHtml(params.roNumber)}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Corrected Evidence</td>
+          <td class="val"><strong>${escapeHtml(params.evidenceName || params.evidenceRuleKey)}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Previous Flag Reason</td>
+          <td class="val"><span style="background:#fee2e2; color:#991b1b; padding: 2px 7px; border-radius: 4px; font-size:12px; font-weight:600;">${escapeHtml(humanReadableReason)}</span></td>
+        </tr>
+        <tr>
+          <td class="label">Technician</td>
+          <td class="val">${escapeHtml(params.technicianName)}</td>
+        </tr>
+        ${params.make ? `<tr><td class="label">Vehicle</td><td class="val">${escapeHtml(params.make)} ${escapeHtml(params.model || '')}</td></tr>` : ''}
+        ${params.vin ? `<tr><td class="label">VIN</td><td class="val"><code>${escapeHtml(params.vin)}</code></td></tr>` : ''}
+        <tr>
+          <td class="label">Status</td>
+          <td class="val"><span style="background:${params.remainingFlagsCount === 0 ? '#d1fae5' : '#fef3c7'}; color:${params.remainingFlagsCount === 0 ? '#065f46' : '#92400e'}; padding: 2px 8px; border-radius: 4px; font-weight:600; font-size:12px;">${params.remainingFlagsCount === 0 ? 'Awaiting Review (All Flags Fixed)' : `${params.remainingFlagsCount} flag(s) remaining`}</span></td>
+        </tr>
+      </table>
+
+      ${params.originalInstruction ? `
+      <div class="note-box">
+        <strong>Reviewer Instruction Addressed:</strong>
+        "${escapeHtml(params.originalInstruction)}"
+      </div>` : ''}
+
+      <div class="btn-container">
+        <a href="${caseUrl}" class="btn">Review Corrected Evidence</a>
+      </div>
+    </div>
+    <div class="footer">
+      This is an automated transmission from Booran Motors Warranty Evidence Engine. Replies are not monitored.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    const text = `[Booran Warranty] Flag Issue Corrected: RO #${params.roNumber}\nTechnician ${params.technicianName} has replaced the evidence for ${params.evidenceName || params.evidenceRuleKey}.\nStatus: Awaiting Review\nReview at: ${caseUrl}`;
+
+    return this.sendMail({
+      to: adminEmails,
       subject,
       html,
       text,
