@@ -52,6 +52,51 @@ export class EvaluatedRulesResponseDto {
   optionalCount: number;
 }
 
+export class CreateEvidenceRuleDto {
+  @ApiProperty({ example: 'rule_battery_seal_check', required: false })
+  id?: string;
+
+  @ApiProperty({ example: 'battery_seal_check' })
+  @IsString()
+  ruleKey: string;
+
+  @ApiProperty({ example: 'HV Battery Enclosure Seal Inspection' })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ example: 'High-resolution photo showing battery perimeter gasket seal intact with zero pinch defects.' })
+  @IsString()
+  description: string;
+
+  @ApiProperty({ enum: ['image', 'video', 'document', 'audio'], example: 'image' })
+  @IsString()
+  mediaType: string;
+
+  @ApiProperty({ enum: [1, 2], example: 2 })
+  tier: number;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  isMandatory: boolean;
+
+  @ApiProperty({ example: '[DealerRONumber]BatterySeal.jpg' })
+  @IsString()
+  namingConvention: string;
+
+  @ApiProperty({ example: 'Fill frame with perimeter gasket seal. Zero blur.', required: false })
+  guidanceText?: string;
+
+  @ApiProperty({ type: [String], example: [], required: false })
+  faultCategorySpecific?: string[];
+
+  minDurationSeconds?: number;
+  maxDurationSeconds?: number;
+}
+
+export class BatchCreateRulesDto {
+  rules: CreateEvidenceRuleDto[];
+}
+
 @Injectable()
 export class BrandPacksService implements OnModuleInit {
   constructor(
@@ -361,6 +406,7 @@ export class BrandPacksService implements OnModuleInit {
     const source = await this.findOne(id);
     const newVersion = source.version + 1;
     const newId = `${source.brandId}_v${newVersion}_draft_${Date.now().toString().slice(-4)}`;
+    const baseName = source.name.replace(/\s*\((?:Draft|Live)\s*v\d+\)/gi, '').trim();
 
     const cloned = new this.packModel({
       id: newId,
@@ -368,8 +414,8 @@ export class BrandPacksService implements OnModuleInit {
       brandName: source.brandName,
       version: newVersion,
       status: 'DRAFT',
-      name: `${source.name} (Draft v${newVersion})`,
-      description: `Cloned draft version of ${source.name}`,
+      name: `${baseName} (Draft v${newVersion})`,
+      description: `Draft v${newVersion} working copy of ${baseName}`,
       rules: source.rules,
     });
 
@@ -386,9 +432,79 @@ export class BrandPacksService implements OnModuleInit {
       { $set: { status: 'ARCHIVED' } },
     );
 
+    const baseName = pack.name.replace(/\s*\((?:Draft|Live)\s*v\d+\)/gi, '').trim();
+    pack.name = `${baseName} (Live v${pack.version})`;
     pack.status = 'PUBLISHED';
     pack.publishedAt = new Date().toISOString();
     pack.publishedBy = 'Sarah Jenkins (Warranty Clerk)';
+
+    return (await pack.save()).toObject();
+  }
+
+  async addRule(packId: string, ruleDto: CreateEvidenceRuleDto): Promise<BrandPack> {
+    const pack = await this.packModel.findOne({ id: packId });
+    if (!pack) throw new NotFoundException(`Brand pack with id ${packId} not found`);
+
+    const sanitizedKey = ruleDto.ruleKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const ruleId = ruleDto.id || `rule_${sanitizedKey}_${Date.now().toString().slice(-4)}`;
+
+    const newRule = {
+      id: ruleId,
+      ruleKey: sanitizedKey,
+      name: ruleDto.name.trim(),
+      description: ruleDto.description?.trim() || ruleDto.name.trim(),
+      mediaType: ruleDto.mediaType || 'image',
+      tier: Number(ruleDto.tier) === 2 ? 2 : 1,
+      isMandatory: Boolean(ruleDto.isMandatory),
+      namingConvention: ruleDto.namingConvention?.trim() || `[DealerRONumber]${sanitizedKey}.jpg`,
+      guidanceText: ruleDto.guidanceText?.trim() || '',
+      faultCategorySpecific: ruleDto.faultCategorySpecific || [],
+      minDurationSeconds: ruleDto.minDurationSeconds,
+      maxDurationSeconds: ruleDto.maxDurationSeconds,
+    };
+
+    // If rule with ruleKey exists, update it, otherwise push new rule
+    const existingIndex = pack.rules.findIndex((r) => r.ruleKey === sanitizedKey);
+    if (existingIndex >= 0) {
+      pack.rules[existingIndex] = newRule as any;
+    } else {
+      pack.rules.push(newRule as any);
+    }
+
+    return (await pack.save()).toObject();
+  }
+
+  async batchAddRules(packId: string, rules: CreateEvidenceRuleDto[]): Promise<BrandPack> {
+    const pack = await this.packModel.findOne({ id: packId });
+    if (!pack) throw new NotFoundException(`Brand pack with id ${packId} not found`);
+
+    for (const ruleDto of rules) {
+      if (!ruleDto.ruleKey || !ruleDto.name) continue;
+      const sanitizedKey = ruleDto.ruleKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const ruleId = ruleDto.id || `rule_${sanitizedKey}_${Date.now().toString().slice(-4)}`;
+
+      const newRule = {
+        id: ruleId,
+        ruleKey: sanitizedKey,
+        name: ruleDto.name.trim(),
+        description: ruleDto.description?.trim() || ruleDto.name.trim(),
+        mediaType: ruleDto.mediaType || 'image',
+        tier: Number(ruleDto.tier) === 2 ? 2 : 1,
+        isMandatory: Boolean(ruleDto.isMandatory),
+        namingConvention: ruleDto.namingConvention?.trim() || `[DealerRONumber]${sanitizedKey}.jpg`,
+        guidanceText: ruleDto.guidanceText?.trim() || '',
+        faultCategorySpecific: ruleDto.faultCategorySpecific || [],
+        minDurationSeconds: ruleDto.minDurationSeconds,
+        maxDurationSeconds: ruleDto.maxDurationSeconds,
+      };
+
+      const existingIndex = pack.rules.findIndex((r) => r.ruleKey === sanitizedKey);
+      if (existingIndex >= 0) {
+        pack.rules[existingIndex] = newRule as any;
+      } else {
+        pack.rules.push(newRule as any);
+      }
+    }
 
     return (await pack.save()).toObject();
   }

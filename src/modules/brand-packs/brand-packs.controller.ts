@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { BrandPacksService, EvaluateRulesDto, EvaluatedRulesResponseDto } from './brand-packs.service';
+import { BrandPacksService, EvaluateRulesDto, EvaluatedRulesResponseDto, CreateEvidenceRuleDto } from './brand-packs.service';
 import { BrandPack } from '../../schemas/brand-pack.schema';
 
 @ApiTags('Brand Packs & Rules Engine')
@@ -45,5 +45,17 @@ export class BrandPacksController {
   @ApiOperation({ summary: 'Publish a draft Brand Pack version to make it live (Group Admin)' })
   async publish(@Param('id') id: string): Promise<BrandPack> {
     return this.brandPacksService.publish(id);
+  }
+
+  @Post(':id/rules')
+  @ApiOperation({ summary: 'Add or update a single Evidence Rule in a Brand Pack' })
+  async addRule(@Param('id') id: string, @Body() dto: CreateEvidenceRuleDto): Promise<BrandPack> {
+    return this.brandPacksService.addRule(id, dto);
+  }
+
+  @Post(':id/rules/batch')
+  @ApiOperation({ summary: 'Batch import multiple Evidence Rules into a Brand Pack from CSV/Excel' })
+  async batchAddRules(@Param('id') id: string, @Body() body: { rules: CreateEvidenceRuleDto[] }): Promise<BrandPack> {
+    return this.brandPacksService.batchAddRules(id, body.rules || []);
   }
 }

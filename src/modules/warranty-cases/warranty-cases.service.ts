@@ -288,7 +288,7 @@ export class WarrantyCasesService implements OnModuleInit {
               ruleKey: 'fault_closeup',
               name: 'Coolant Hose Moisture Close-up',
               mediaType: 'image',
-              storageUrl: 'https://images.unsplash.com/photo-1486006920555-c77dce18193b?auto=format&fit=crop&w=800&q=80',
+              storageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
               uploadedAt: '2026-09-03T08:20:00.000Z',
               isVerifiedByClerk: true,
             },
@@ -650,7 +650,7 @@ export class WarrantyCasesService implements OnModuleInit {
           repairStage: 'Repair complete',
           evidenceItems: [
             { id: 'ev_chelflg3_1', ruleKey: 'vin_photo', name: 'VIN Plate Photo', mediaType: 'image', storageUrl: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-09-08T14:00:00.000Z', ocrExtractedText: 'LSJW36291SH041239', ocrConfidence: 97.8 },
-            { id: 'ev_chelflg3_2', ruleKey: 'fault_closeup', name: 'Charge Port Actuator Close-up', mediaType: 'image', storageUrl: 'https://images.unsplash.com/photo-1486006920555-c77dce18193b?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-09-08T14:05:00.000Z' },
+            { id: 'ev_chelflg3_2', ruleKey: 'fault_closeup', name: 'Charge Port Actuator Close-up', mediaType: 'image', storageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-09-08T14:05:00.000Z' },
           ],
           voiceNotes: [],
           flagHistory: [
