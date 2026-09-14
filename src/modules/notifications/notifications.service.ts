@@ -1,7 +1,14 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserDocument } from '../../schemas/user.schema';
 import * as nodemailer from 'nodemailer';
+import { App, initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
+import { getMessaging, Messaging } from 'firebase-admin/messaging';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class SendNotificationDto {
   @ApiProperty({ example: 'tech_jake_s' })
@@ -80,14 +87,20 @@ export interface FlagResolvedEmailParams {
   portalUrl?: string;
 }
 
-
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
   private transporter: nodemailer.Transporter | null = null;
   private isSmtpConfigured = false;
+  private firebaseApp: App | null = null;
+  private isFcmConfigured = false;
+
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+  ) {}
 
   onModuleInit() {
+    // 1. SMTP Initialization
     const host = process.env.SMTP_HOST || 'smtp.gmail.com';
     const port = Number(process.env.SMTP_PORT) || 465;
     const secure = process.env.SMTP_SECURE === 'true' || port === 465;
@@ -117,7 +130,365 @@ export class NotificationsService implements OnModuleInit {
     } else {
       this.logger.warn('[SMTP] Credentials not set in .env; notifications will run in mock log mode.');
     }
+
+    // 2. Firebase FCM Initialization
+    try {
+      if (getApps().length === 0) {
+        let credential: any;
+        const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || './firebase-service-account.json';
+        const resolvedPath = path.resolve(process.cwd(), serviceAccountPath);
+
+        if (fs.existsSync(resolvedPath)) {
+          const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+          credential = cert(serviceAccount);
+        } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+          credential = cert({
+            projectId: process.env.FIREBASE_PROJECT_ID || 'booranwarranty-b8a0a',
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+          });
+        }
+
+        if (credential) {
+          this.firebaseApp = initializeApp({
+            credential,
+            projectId: process.env.FIREBASE_PROJECT_ID || 'booranwarranty-b8a0a',
+          });
+          this.isFcmConfigured = true;
+          this.logger.log(`[FCM] Firebase Cloud Messaging ready for project: ${process.env.FIREBASE_PROJECT_ID || 'booranwarranty-b8a0a'}`);
+        }
+      } else {
+        this.firebaseApp = getApp();
+        this.isFcmConfigured = true;
+        this.logger.log(`[FCM] Attached to existing Firebase App: ${this.firebaseApp.name}`);
+      }
+    } catch (err: any) {
+      this.logger.error(`[FCM] Failed to initialize Firebase Cloud Messaging: ${err.message}`);
+    }
   }
+
+  getStatus() {
+    return {
+      smtp: {
+        configured: this.isSmtpConfigured,
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        user: process.env.SMTP_USER,
+      },
+      fcm: {
+        configured: this.isFcmConfigured,
+        projectId: process.env.FIREBASE_PROJECT_ID || 'booranwarranty-b8a0a',
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        appsActive: getApps().length,
+      },
+    };
+  }
+
+  // ─── Mobile Device Registration (FCM) ───────────────────────────────────
+
+  async registerDeviceToken(userId: string, token: string, platform: 'android' | 'ios' | 'web' = 'android') {
+    this.logger.log(`[FCM] Registering device token for user ${userId} (${platform})`);
+    try {
+      // Remove token from any other accounts to avoid cross-delivery
+      await this.userModel.updateMany(
+        { 'fcmTokens.token': token },
+        { $pull: { fcmTokens: { token } } },
+      );
+
+      // Add to target user
+      await this.userModel.updateOne(
+        { id: userId },
+        {
+          $push: {
+            fcmTokens: {
+              token,
+              platform,
+              updatedAt: new Date(),
+            },
+          },
+        },
+      );
+
+      return {
+        success: true,
+        message: 'Device token registered successfully for push notifications',
+        userId,
+        platform,
+      };
+    } catch (err: any) {
+      this.logger.error(`[FCM] Error registering device token: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async unregisterDeviceToken(token: string, userId?: string) {
+    this.logger.log(`[FCM] Unregistering device token...`);
+    try {
+      const query = userId ? { id: userId } : { 'fcmTokens.token': token };
+      await this.userModel.updateMany(query, {
+        $pull: { fcmTokens: { token } },
+      });
+      return { success: true, message: 'Device token unregistered' };
+    } catch (err: any) {
+      this.logger.error(`[FCM] Error unregistering device token: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async getUserDeviceTokens(userId: string): Promise<string[]> {
+    try {
+      const user = await this.userModel.findOne({ id: userId }).lean();
+      return (user?.fcmTokens || []).map((t) => t.token).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  async getRoleDeviceTokens(role: string): Promise<string[]> {
+    try {
+      const users = await this.userModel.find({ role, isActive: true }).lean();
+      const tokens: string[] = [];
+      users.forEach((u) => {
+        (u.fcmTokens || []).forEach((t) => {
+          if (t.token && !tokens.includes(t.token)) {
+            tokens.push(t.token);
+          }
+        });
+      });
+      return tokens;
+    } catch {
+      return [];
+    }
+  }
+
+  // ─── FCM Push Dispatcher ────────────────────────────────────────────────
+
+  async sendPushNotification(options: {
+    tokens?: string[];
+    topic?: string;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+    dryRun?: boolean;
+  }) {
+    if (!this.isFcmConfigured || !this.firebaseApp) {
+      this.logger.warn(`[FCM] Not configured; push notification logged: "${options.title}" - "${options.body}"`);
+      return { success: false, reason: 'FCM_NOT_CONFIGURED' };
+    }
+
+    const messaging = getMessaging(this.firebaseApp);
+    const results: any = {};
+
+    const baseMessage: any = {
+      notification: {
+        title: options.title,
+        body: options.body,
+      },
+      data: {
+        ...options.data,
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        timestamp: String(Date.now()),
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'warranty_alerts',
+          sound: 'default',
+          color: '#2563eb',
+          priority: 'high',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+          },
+        },
+      },
+    };
+
+    // 1. Send to Topic if specified
+    if (options.topic) {
+      try {
+        const topicMessage = {
+          ...baseMessage,
+          topic: options.topic,
+        };
+        const topicRes = await messaging.send(topicMessage, options.dryRun);
+        this.logger.log(`[FCM] Sent to topic '${options.topic}': ${topicRes}`);
+        results.topic = { success: true, messageId: topicRes };
+      } catch (err: any) {
+        this.logger.error(`[FCM] Failed sending to topic '${options.topic}': ${err.message}`);
+        results.topic = { success: false, error: err.message };
+      }
+    }
+
+    // 2. Send to individual device tokens if specified
+    if (options.tokens && options.tokens.length > 0) {
+      try {
+        const multicastMessage = {
+          ...baseMessage,
+          tokens: options.tokens,
+        };
+        const response = await messaging.sendEachForMulticast(multicastMessage, options.dryRun);
+        this.logger.log(`[FCM] Multicast sent. Success: ${response.successCount}, Failure: ${response.failureCount}`);
+        results.tokens = {
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+        };
+
+        // Clean up invalid tokens automatically
+        if (response.failureCount > 0 && !options.dryRun) {
+          response.responses.forEach(async (resp, idx) => {
+            if (!resp.success) {
+              const errCode = resp.error?.code;
+              if (
+                errCode === 'messaging/invalid-registration-token' ||
+                errCode === 'messaging/registration-token-not-registered'
+              ) {
+                const badToken = options.tokens![idx];
+                this.logger.warn(`[FCM] Removing invalid token: ${badToken}`);
+                await this.unregisterDeviceToken(badToken);
+              }
+            }
+          });
+        }
+      } catch (err: any) {
+        this.logger.error(`[FCM] Failed sending multicast push: ${err.message}`);
+        results.tokens = { success: false, error: err.message };
+      }
+    }
+
+    return { success: true, ...results };
+  }
+
+  async sendTestPushNotification(dto: {
+    token?: string;
+    topic?: string;
+    title: string;
+    body: string;
+    caseId?: string;
+    dryRun?: boolean;
+  }) {
+    const tokens = dto.token ? [dto.token] : undefined;
+    const topic = dto.token ? undefined : (dto.topic || 'warranty-admins');
+
+    return this.sendPushNotification({
+      tokens,
+      topic,
+      title: dto.title,
+      body: dto.body,
+      data: {
+        caseId: dto.caseId || 'CASE-TEST',
+        event: 'TEST_PUSH',
+      },
+      dryRun: dto.dryRun ?? false,
+    });
+  }
+
+  async sendTestEmail(targetEmail: string, customSubject?: string) {
+    const subject = customSubject || '🧪 [Booran Warranty] SMTP Test Notification';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #081225; color: #ffffff; border-radius: 12px; border: 1px solid #1a56db;">
+        <h2 style="color: #00f0ff; margin-bottom: 8px;">Booran Warranty Notification Test</h2>
+        <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">This email confirms that your SMTP service is connected and successfully dispatching emails from the Booran Warranty Evidence backend.</p>
+        <div style="background: rgba(0, 240, 255, 0.08); border-left: 4px solid #00f0ff; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; font-size: 13px; color: #ffffff;"><strong>Host:</strong> ${process.env.SMTP_HOST || 'smtp.gmail.com'}</p>
+          <p style="margin: 6px 0 0; font-size: 13px; color: #ffffff;"><strong>Sender:</strong> ${process.env.SMTP_USER || 'adteam@omnisuiteai.com'}</p>
+          <p style="margin: 6px 0 0; font-size: 13px; color: #ffffff;"><strong>Recipient:</strong> ${targetEmail}</p>
+          <p style="margin: 6px 0 0; font-size: 13px; color: #ffffff;"><strong>Dispatched At:</strong> ${new Date().toISOString()}</p>
+        </div>
+        <p style="color: #64748b; font-size: 12px; margin-top: 24px;">OmniSuiteAI Warranty Evidence Capture · Booran Motor Group</p>
+      </div>
+    `;
+    return this.sendMail({ to: targetEmail, subject, html });
+  }
+
+  // ─── Lifecycle FCM Push Helpers ─────────────────────────────────────────
+
+  async sendNewTicketPushToAdmins(caseData: {
+    id: string;
+    roNumber: string;
+    make: string;
+    model: string;
+    vin: string;
+    technicianName: string;
+  }) {
+    const adminTokens = await this.getRoleDeviceTokens('ADMIN');
+    return this.sendPushNotification({
+      topic: 'warranty-admins',
+      tokens: adminTokens.length > 0 ? adminTokens : undefined,
+      title: `📋 New Warranty Ticket: RO #${caseData.roNumber}`,
+      body: `${caseData.technicianName} submitted case for ${caseData.make} ${caseData.model} (${caseData.vin})`,
+      data: {
+        caseId: caseData.id,
+        roNumber: caseData.roNumber,
+        event: 'NEW_TICKET_RAISED',
+      },
+    });
+  }
+
+  async sendCaseAcceptedPushToTechnician(
+    caseData: { id: string; roNumber: string; claimNumber: string },
+    technicianId: string,
+  ) {
+    const techTokens = await this.getUserDeviceTokens(technicianId);
+    return this.sendPushNotification({
+      tokens: techTokens.length > 0 ? techTokens : undefined,
+      topic: techTokens.length === 0 ? `tech-${technicianId}` : undefined,
+      title: `✅ Claim Approved: RO #${caseData.roNumber}`,
+      body: `Your warranty claim has been approved under OEM Claim #${caseData.claimNumber}. Case file locked.`,
+      data: {
+        caseId: caseData.id,
+        roNumber: caseData.roNumber,
+        claimNumber: caseData.claimNumber,
+        event: 'CASE_ACCEPTED',
+      },
+    });
+  }
+
+  async sendCaseRejectedPushToTechnician(
+    caseData: { id: string; roNumber: string },
+    flagData: { evidenceRuleKey: string; reasonCode: string; instruction: string; flaggedBy?: string },
+    technicianId: string,
+  ) {
+    const techTokens = await this.getUserDeviceTokens(technicianId);
+    const reason = flagData.reasonCode ? flagData.reasonCode.replace(/_/g, ' ') : 'Evidence Rejected';
+    return this.sendPushNotification({
+      tokens: techTokens.length > 0 ? techTokens : undefined,
+      topic: techTokens.length === 0 ? `tech-${technicianId}` : undefined,
+      title: `⚠️ Action Required: RO #${caseData.roNumber}`,
+      body: `${flagData.flaggedBy || 'Reviewer'} flagged ${flagData.evidenceRuleKey} (${reason}). Tap to update evidence.`,
+      data: {
+        caseId: caseData.id,
+        roNumber: caseData.roNumber,
+        evidenceRuleKey: flagData.evidenceRuleKey,
+        reasonCode: flagData.reasonCode,
+        event: 'CASE_FLAGGED',
+      },
+    });
+  }
+
+  async sendFlagResolvedPushToAdmins(
+    caseData: { id: string; roNumber: string; technicianName: string },
+    flagData: { evidenceRuleKey: string },
+  ) {
+    const adminTokens = await this.getRoleDeviceTokens('ADMIN');
+    return this.sendPushNotification({
+      topic: 'warranty-admins',
+      tokens: adminTokens.length > 0 ? adminTokens : undefined,
+      title: `✅ Evidence Updated: RO #${caseData.roNumber}`,
+      body: `Technician ${caseData.technicianName} replaced evidence for ${flagData.evidenceRuleKey}. Ready for review.`,
+      data: {
+        caseId: caseData.id,
+        roNumber: caseData.roNumber,
+        evidenceRuleKey: flagData.evidenceRuleKey,
+        event: 'FLAG_RESOLVED',
+      },
+    });
+  }
+
 
   /**
    * Internal generic mail sender

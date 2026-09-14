@@ -32,6 +32,18 @@ export class User {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({
+    type: [
+      {
+        token: { type: String, required: true },
+        platform: { type: String, enum: ['android', 'ios', 'web'], default: 'android' },
+        updatedAt: { type: Date, default: Date.now },
+      },
+    ],
+    default: [],
+  })
+  fcmTokens: { token: string; platform: 'android' | 'ios' | 'web'; updatedAt: Date }[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

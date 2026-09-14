@@ -962,7 +962,7 @@ export class WarrantyCasesService implements OnModuleInit {
 
     const savedCase = (await newCase.save()).toObject();
 
-    // Trigger asynchronous email alert to Admins (non-blocking)
+    // Trigger asynchronous email & push alerts to Admins (non-blocking)
     this.getAdminEmails()
       .then((adminEmails) => {
         this.notificationsService.sendNewTicketRaisedAlert(
@@ -982,6 +982,15 @@ export class WarrantyCasesService implements OnModuleInit {
         ).catch((err) => console.error('[Notifications] Failed to send new ticket alert:', err?.message));
       })
       .catch(() => {});
+
+    this.notificationsService.sendNewTicketPushToAdmins({
+      id: savedCase.id,
+      roNumber: savedCase.roNumber,
+      make: savedCase.make,
+      model: savedCase.model,
+      vin: savedCase.vin,
+      technicianName: savedCase.technicianName,
+    }).catch((err) => console.error('[Notifications] Failed to send new ticket push:', err?.message));
 
     return savedCase;
   }
@@ -1111,6 +1120,17 @@ export class WarrantyCasesService implements OnModuleInit {
           ).catch((err) => console.error('[Notifications] Failed to send flag resolved alert:', err?.message));
         })
         .catch(() => {});
+
+      this.notificationsService.sendFlagResolvedPushToAdmins(
+        {
+          id: savedCase.id,
+          roNumber: savedCase.roNumber,
+          technicianName: savedCase.technicianName,
+        },
+        {
+          evidenceRuleKey: ruleKey,
+        },
+      ).catch((err) => console.error('[Notifications] Failed to send flag resolved push:', err?.message));
     }
 
     return savedCase;
@@ -1196,6 +1216,17 @@ export class WarrantyCasesService implements OnModuleInit {
           ).catch((err) => console.error('[Notifications] Failed to send flag resolved alert:', err?.message));
         })
         .catch(() => {});
+
+      this.notificationsService.sendFlagResolvedPushToAdmins(
+        {
+          id: savedCase.id,
+          roNumber: savedCase.roNumber,
+          technicianName: savedCase.technicianName,
+        },
+        {
+          evidenceRuleKey: dto.ruleKey,
+        },
+      ).catch((err) => console.error('[Notifications] Failed to send flag resolved push:', err?.message));
     }
 
     return savedCase;
@@ -1299,6 +1330,17 @@ export class WarrantyCasesService implements OnModuleInit {
       })
       .catch(() => {});
 
+    this.notificationsService.sendCaseRejectedPushToTechnician(
+      { id: savedCase.id, roNumber: savedCase.roNumber },
+      {
+        evidenceRuleKey: dto.evidenceRuleKey,
+        reasonCode: dto.reasonCode,
+        instruction: dto.instruction,
+        flaggedBy: dto.flaggedBy,
+      },
+      savedCase.technicianId,
+    ).catch((err) => console.error('[Notifications] Failed to send flag push:', err?.message));
+
     return savedCase;
   }
 
@@ -1342,6 +1384,15 @@ export class WarrantyCasesService implements OnModuleInit {
         ).catch((err) => console.error('[Notifications] Failed to send claim accepted alert:', err?.message));
       })
       .catch(() => {});
+
+    this.notificationsService.sendCaseAcceptedPushToTechnician(
+      {
+        id: savedCase.id,
+        roNumber: savedCase.roNumber,
+        claimNumber: savedCase.claimNumber || dto.claimNumber,
+      },
+      savedCase.technicianId,
+    ).catch((err) => console.error('[Notifications] Failed to send claim accepted push:', err?.message));
 
     return savedCase;
   }
