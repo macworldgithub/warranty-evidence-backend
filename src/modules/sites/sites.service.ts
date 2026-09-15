@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsArray } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsArray, IsOptional, IsBoolean } from 'class-validator';
 import { Site, SiteDocument } from '../../schemas/site.schema';
 
 export class SiteDto {
@@ -38,7 +38,36 @@ export class CreateSiteDto {
   @IsString()
   roPrefix: string;
 
-  @ApiProperty({ example: ['brand_toyota', 'brand_ford'] })
+  @ApiPropertyOptional({ example: ['brand_toyota', 'brand_ford'] })
+  @IsOptional()
+  @IsArray()
+  authorizedBrandIds?: string[];
+}
+
+export class UpdateSiteDto {
+  @ApiPropertyOptional({ example: 'Booran Berwick Multi-Franchise' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'Main St, Berwick VIC' })
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional({ example: 'BRW-' })
+  @IsOptional()
+  @IsString()
+  roPrefix?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateSiteBrandsDto {
+  @ApiProperty({ example: ['brand_byd', 'brand_toyota'] })
   @IsArray()
   authorizedBrandIds: string[];
 }
@@ -121,16 +150,49 @@ export class SitesService implements OnModuleInit {
     return site;
   }
 
+  async getAuthorizedBrands(id: string): Promise<{ authorizedBrandIds: string[] }> {
+    const site = await this.siteModel.findOne({ id }, { authorizedBrandIds: 1, _id: 0 }).lean();
+    if (!site) throw new NotFoundException(`Site with id ${id} not found`);
+    return { authorizedBrandIds: site.authorizedBrandIds };
+  }
+
   async create(dto: CreateSiteDto): Promise<Site> {
     const newSite = new this.siteModel({
       id: `site_${dto.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString().slice(-4)}`,
-      code: dto.roPrefix.replace(/[^a-zA-Z0-9]/g, ''),
+      code: dto.roPrefix.replace(/[^a-zA-Z0-9]/g, '').toUpperCase(),
       name: dto.name,
       location: dto.location,
       roPrefix: dto.roPrefix,
-      authorizedBrandIds: dto.authorizedBrandIds,
+      authorizedBrandIds: dto.authorizedBrandIds ?? [],
       isActive: true,
     });
     return (await newSite.save()).toObject();
+  }
+
+  async update(id: string, dto: UpdateSiteDto): Promise<Site> {
+    const updated = await this.siteModel
+      .findOneAndUpdate({ id }, { $set: dto }, { new: true })
+      .lean();
+    if (!updated) throw new NotFoundException(`Site with id ${id} not found`);
+    return updated;
+  }
+
+  async updateBrands(id: string, dto: UpdateSiteBrandsDto): Promise<Site> {
+    const updated = await this.siteModel
+      .findOneAndUpdate(
+        { id },
+        { $set: { authorizedBrandIds: dto.authorizedBrandIds } },
+        { new: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException(`Site with id ${id} not found`);
+    return updated;
+  }
+
+  async deactivate(id: string): Promise<{ message: string }> {
+    const site = await this.siteModel.findOne({ id });
+    if (!site) throw new NotFoundException(`Site with id ${id} not found`);
+    await this.siteModel.updateOne({ id }, { $set: { isActive: false } });
+    return { message: `Site ${id} deactivated` };
   }
 }
