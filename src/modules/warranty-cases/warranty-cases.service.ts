@@ -90,6 +90,14 @@ export class CreateWarrantyCaseDto {
   @IsOptional()
   @IsEnum(UserRole)
   creatorRole?: UserRole;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  evidenceItems?: any[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  voiceNotes?: any[];
 }
 
 export class AddEvidenceDto {
@@ -994,12 +1002,35 @@ export class WarrantyCasesService implements OnModuleInit {
       noiseFault: dto.noiseFault,
       diagnosticsAvailable: dto.diagnosticsAvailable,
       repairStage: dto.repairStage,
-      evidenceItems: [],
-      voiceNotes: [],
+      evidenceItems: (dto.evidenceItems && Array.isArray(dto.evidenceItems))
+        ? dto.evidenceItems.map((ev, idx) => ({
+            id: ev.id || `ev_${Date.now()}_${idx}`,
+            ruleKey: ev.ruleKey,
+            name: ev.name || ev.ruleName || ev.ruleKey,
+            mediaType: ev.mediaType || 'image',
+            storageUrl: ev.storageUrl || ev.fileUri || '',
+            thumbnailUrl: ev.thumbnailUrl || ev.storageUrl || ev.fileUri || '',
+            oemFileName: ev.oemFileName || `${dto.roNumber}_${idx + 1}.jpg`,
+            uploadedAt: ev.uploadedAt || ev.capturedAt || new Date().toISOString(),
+            ocrExtractedText: ev.ocrExtractedText,
+            ocrConfidence: ev.ocrConfidence || 95,
+            durationSeconds: ev.durationSeconds,
+            isVerifiedByClerk: false,
+          }))
+        : [],
+      voiceNotes: (dto.voiceNotes && Array.isArray(dto.voiceNotes))
+        ? dto.voiceNotes.map((vn, idx) => ({
+            id: vn.id || `vn_${Date.now()}_${idx}`,
+            transcript: vn.transcript || '',
+            durationSeconds: vn.durationSeconds || 0,
+            recordedAt: vn.recordedAt || new Date().toISOString(),
+            audioStorageUrl: vn.audioStorageUrl || vn.audioUri || '',
+          }))
+        : [],
       flagHistory: [],
       checklistSummary: {
         totalMandatory: evaluated.mandatoryCount,
-        completedMandatory: 0,
+        completedMandatory: (dto.evidenceItems && Array.isArray(dto.evidenceItems)) ? dto.evidenceItems.length : 0,
         totalOptional: evaluated.optionalCount,
         completedOptional: 0,
         isReadyForSubmission: true,
