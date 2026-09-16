@@ -10,6 +10,7 @@ import { StorageService } from '../../common/storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
 import { User, UserDocument } from '../../schemas/user.schema';
+import { PaginatedResponse } from '../../common/dto/pagination.dto';
 
 export class CreateWarrantyCaseDto {
   @ApiProperty({ example: 'site_cranbourne_byd' })
@@ -846,9 +847,12 @@ export class WarrantyCasesService implements OnModuleInit {
     technicianName?: string;
     ro?: string;
     vin?: string;
+    search?: string;
     flaggedOnly?: boolean;
     agedHours?: number;
-  }): Promise<WarrantyCase[]> {
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<WarrantyCase>> {
     const query: any = {};
 
     if (filters?.siteId) query.siteId = filters.siteId;
@@ -878,7 +882,49 @@ export class WarrantyCasesService implements OnModuleInit {
       query.$or = orConditions;
     }
 
-    return this.caseModel.find(query).sort({ createdAt: -1 }).lean();
+    if (filters?.search && filters.search.trim()) {
+      const s = filters.search.trim();
+      const searchOr = [
+        { roNumber: { $regex: s, $options: 'i' } },
+        { vin: { $regex: s, $options: 'i' } },
+        { model: { $regex: s, $options: 'i' } },
+        { make: { $regex: s, $options: 'i' } },
+        { technicianName: { $regex: s, $options: 'i' } },
+        { concernTitle: { $regex: s, $options: 'i' } },
+        { claimNumber: { $regex: s, $options: 'i' } },
+        { siteName: { $regex: s, $options: 'i' } },
+        { brandName: { $regex: s, $options: 'i' } },
+      ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchOr }];
+        delete query.$or;
+      } else {
+        query.$or = searchOr;
+      }
+    }
+
+    const page = Math.max(1, Number(filters?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(filters?.limit) || 10));
+    const skip = (page - 1) * limit;
+
+    const [total, data] = await Promise.all([
+      this.caseModel.countDocuments(query),
+      this.caseModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   async findOne(id: string, callerRole?: string, callerUserId?: string, callerUserName?: string): Promise<WarrantyCase> {

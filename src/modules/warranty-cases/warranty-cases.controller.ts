@@ -12,6 +12,7 @@ import {
 } from './warranty-cases.service';
 import { CaseStatus, UserRole } from '../../common/enums';
 import { WarrantyCase } from '../../schemas/warranty-case.schema';
+import { PaginatedResponse } from '../../common/dto/pagination.dto';
 
 @ApiTags('Warranty Cases (CRM & Review Portal)')
 @Controller('warranty-cases')
@@ -27,8 +28,11 @@ export class WarrantyCasesController {
   @ApiQuery({ name: 'technicianName', required: false, description: 'Filter by technician name' })
   @ApiQuery({ name: 'ro', required: false, description: 'Search by Repair Order number' })
   @ApiQuery({ name: 'vin', required: false, description: 'Search by vehicle VIN' })
+  @ApiQuery({ name: 'search', required: false, description: 'General search across RO, VIN, model, technician, etc.' })
   @ApiQuery({ name: 'flaggedOnly', required: false, type: Boolean, description: 'Return only flagged cases' })
   @ApiQuery({ name: 'agedHours', required: false, type: Number, description: 'Filter cases older than X hours' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default 10)' })
   async findAll(
     @Query('siteId') siteId?: string,
     @Query('brandId') brandId?: string,
@@ -37,13 +41,16 @@ export class WarrantyCasesController {
     @Query('technicianName') technicianName?: string,
     @Query('ro') ro?: string,
     @Query('vin') vin?: string,
+    @Query('search') search?: string,
     @Query('flaggedOnly') flaggedOnly?: boolean,
     @Query('agedHours') agedHours?: number,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
     @Headers('authorization') authHeader?: string,
     @Headers('x-user-role') xUserRole?: string,
     @Headers('x-user-id') xUserId?: string,
     @Headers('x-user-name') xUserName?: string,
-  ): Promise<WarrantyCase[]> {
+  ): Promise<PaginatedResponse<WarrantyCase>> {
     let activeTechId = technicianId;
     let activeTechName = technicianName;
 
@@ -68,8 +75,11 @@ export class WarrantyCasesController {
       technicianName: activeTechName,
       ro,
       vin,
+      search,
       flaggedOnly,
       agedHours,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 

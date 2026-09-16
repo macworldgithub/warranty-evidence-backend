@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsEnum } from 'class-validator';
+import { IsString, IsBoolean, IsEnum, IsOptional, IsArray, IsNumber } from 'class-validator';
 import { FaultCategory, RepairStage } from '../../common/enums';
 import { BrandPack, BrandPackDocument } from '../../schemas/brand-pack.schema';
 
@@ -54,6 +54,8 @@ export class EvaluatedRulesResponseDto {
 
 export class CreateEvidenceRuleDto {
   @ApiProperty({ example: 'rule_battery_seal_check', required: false })
+  @IsOptional()
+  @IsString()
   id?: string;
 
   @ApiProperty({ example: 'battery_seal_check' })
@@ -65,31 +67,50 @@ export class CreateEvidenceRuleDto {
   name: string;
 
   @ApiProperty({ example: 'High-resolution photo showing battery perimeter gasket seal intact with zero pinch defects.' })
+  @IsOptional()
   @IsString()
-  description: string;
+  description?: string;
 
   @ApiProperty({ enum: ['image', 'video', 'document', 'audio'], example: 'image' })
+  @IsOptional()
   @IsString()
-  mediaType: string;
+  mediaType?: string;
 
   @ApiProperty({ enum: [1, 2], example: 2 })
-  tier: number;
+  @IsOptional()
+  tier?: number;
 
   @ApiProperty({ example: true })
+  @IsOptional()
   @IsBoolean()
-  isMandatory: boolean;
+  isMandatory?: boolean;
 
   @ApiProperty({ example: '[DealerRONumber]BatterySeal.jpg' })
+  @IsOptional()
   @IsString()
-  namingConvention: string;
+  namingConvention?: string;
 
   @ApiProperty({ example: 'Fill frame with perimeter gasket seal. Zero blur.', required: false })
+  @IsOptional()
+  @IsString()
   guidanceText?: string;
 
+  @ApiProperty({ example: 'data:image/jpeg;base64,... or https://storage.url/example.jpg', required: false })
+  @IsOptional()
+  @IsString()
+  exampleImageUrl?: string;
+
   @ApiProperty({ type: [String], example: [], required: false })
+  @IsOptional()
+  @IsArray()
   faultCategorySpecific?: string[];
 
+  @IsOptional()
+  @IsNumber()
   minDurationSeconds?: number;
+
+  @IsOptional()
+  @IsNumber()
   maxDurationSeconds?: number;
 }
 
@@ -458,6 +479,7 @@ export class BrandPacksService implements OnModuleInit {
       isMandatory: Boolean(ruleDto.isMandatory),
       namingConvention: ruleDto.namingConvention?.trim() || `[DealerRONumber]${sanitizedKey}.jpg`,
       guidanceText: ruleDto.guidanceText?.trim() || '',
+      exampleImageUrl: ruleDto.exampleImageUrl?.trim() || undefined,
       faultCategorySpecific: ruleDto.faultCategorySpecific || [],
       minDurationSeconds: ruleDto.minDurationSeconds,
       maxDurationSeconds: ruleDto.maxDurationSeconds,
@@ -471,6 +493,7 @@ export class BrandPacksService implements OnModuleInit {
       pack.rules.push(newRule as any);
     }
 
+    pack.markModified('rules');
     return (await pack.save()).toObject();
   }
 
@@ -493,6 +516,7 @@ export class BrandPacksService implements OnModuleInit {
         isMandatory: Boolean(ruleDto.isMandatory),
         namingConvention: ruleDto.namingConvention?.trim() || `[DealerRONumber]${sanitizedKey}.jpg`,
         guidanceText: ruleDto.guidanceText?.trim() || '',
+        exampleImageUrl: ruleDto.exampleImageUrl?.trim() || undefined,
         faultCategorySpecific: ruleDto.faultCategorySpecific || [],
         minDurationSeconds: ruleDto.minDurationSeconds,
         maxDurationSeconds: ruleDto.maxDurationSeconds,
@@ -506,6 +530,7 @@ export class BrandPacksService implements OnModuleInit {
       }
     }
 
+    pack.markModified('rules');
     return (await pack.save()).toObject();
   }
 }

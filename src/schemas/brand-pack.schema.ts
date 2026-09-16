@@ -38,6 +38,9 @@ export class EvidenceRuleSubdocument {
   @Prop()
   guidanceText?: string;
 
+  @Prop()
+  exampleImageUrl?: string;
+
   @Prop({ type: [String], default: [] })
   faultCategorySpecific?: string[];
 }
