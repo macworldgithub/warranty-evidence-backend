@@ -974,7 +974,7 @@ export class WarrantyCasesService implements OnModuleInit {
     const newCase = new this.caseModel({
       id: `CASE-${dto.roNumber.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`,
       siteId: dto.siteId,
-      siteName: dto.siteId.includes('cranbourne') ? 'Booran BYD Cranbourne' : 'Booran Multi-Franchise',
+      siteName: (dto.siteId.includes('cranbourne') ? 'Booran BYD Cranbourne' : dto.siteId.includes('dandenong') ? 'Booran Dandenong Multi-Franchise' : dto.siteId.includes('cheltenham') ? 'Booran MG \u0026 Chery Cheltenham' : dto.siteId.includes('berwick') ? 'Booran Berwick Commercials' : 'Booran Dealership'),
       brandId: dto.brandId,
       brandName: dto.make,
       roNumber: dto.roNumber,
@@ -1451,3 +1451,4 @@ export class WarrantyCasesService implements OnModuleInit {
     return (await warrantyCase.save()).toObject();
   }
 }
+
