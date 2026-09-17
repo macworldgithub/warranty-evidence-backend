@@ -85,7 +85,7 @@ This API powers:
   });
 
   const port = process.env.PORT || 4000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`🚀 Booran Warranty API running at: http://localhost:${port}/api/v1`);
   console.log(`📖 Swagger OpenAPI docs available at: http://localhost:${port}/api/docs`);
 }
