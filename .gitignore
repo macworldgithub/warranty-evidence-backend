@@ -44,7 +44,6 @@ lerna-debug.log*
 firebase-service-account.json
 *.pem
 *.key
-uploads/
 
 # temp directory
 .temp
