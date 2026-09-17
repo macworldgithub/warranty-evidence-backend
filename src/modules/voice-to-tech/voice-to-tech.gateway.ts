@@ -33,8 +33,8 @@ export class VoiceToTechGateway
       path: '/api/v1/voice-to-tech/live',
     });
 
-    this.wss.on('connection', (clientWs: WebSocket) => {
-      this.handleClientConnection(clientWs);
+    this.wss.on('connection', (clientWs: WebSocket, req: IncomingMessage) => {
+      this.handleClientConnection(clientWs, req);
     });
 
     this.logger.log(
@@ -42,7 +42,7 @@ export class VoiceToTechGateway
     );
   }
 
-  private handleClientConnection(clientWs: WebSocket) {
+  private handleClientConnection(clientWs: WebSocket, req?: IncomingMessage) {
     const apiKey = this.config.get<string>('DEEPGRAM_KEY');
     if (!apiKey) {
       clientWs.send(
@@ -52,21 +52,35 @@ export class VoiceToTechGateway
       return;
     }
 
-    this.logger.log('Client connected to live voice stream');
+    const parsedUrl = new URL(req?.url || '', 'http://localhost');
+    const encoding = parsedUrl.searchParams.get('encoding') || 'linear16';
+    const sampleRate = parsedUrl.searchParams.get('sample_rate') || '16000';
+    const channels = parsedUrl.searchParams.get('channels') || '1';
+    const language = parsedUrl.searchParams.get('language') || 'en-AU';
 
-    const queryParams = new URLSearchParams({
+    this.logger.log(`Client connected to live voice stream (encoding: ${encoding}, sample_rate: ${sampleRate})`);
+
+    const params: Record<string, string> = {
       model: 'nova-2',
-      language: 'en-AU',
+      language,
       punctuate: 'true',
       smart_format: 'true',
       interim_results: 'true',
       endpointing: '300',
-      diarize: 'true',
+      diarize: 'false',
       filler_words: 'false',
-      channels: '1',
-      encoding: 'linear16',
-      sample_rate: '16000',
-    }).toString();
+    };
+
+    if (encoding === 'linear16') {
+      params.encoding = 'linear16';
+      params.sample_rate = sampleRate;
+      params.channels = channels;
+    } else if (encoding !== 'auto' && encoding !== 'container') {
+      params.encoding = encoding;
+      if (sampleRate) params.sample_rate = sampleRate;
+    }
+
+    const queryParams = new URLSearchParams(params).toString();
 
     let dgWs: WebSocket | null = null;
     let isDgOpen = false;

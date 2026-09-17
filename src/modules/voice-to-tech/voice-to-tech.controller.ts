@@ -169,25 +169,40 @@ This is the preferred method from the mobile PWA — the browser records audio a
       storage: memoryStorage(),
       limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max
       fileFilter: (_req, file, cb) => {
-        const allowed = [
+        const allowedMimes = [
           'audio/webm',
           'audio/mp4',
-          'video/mp4',   // some browsers label audio recordings as video/mp4
+          'video/mp4',
           'audio/mpeg',
           'audio/mp3',
           'audio/wav',
           'audio/x-wav',
+          'audio/wave',
           'audio/m4a',
           'audio/x-m4a',
+          'audio/aac',
+          'audio/x-aac',
+          'audio/3gpp',
+          'audio/3gpp2',
           'audio/ogg',
           'application/ogg',
+          'audio/flac',
+          'audio/x-flac',
+          'application/octet-stream',
         ];
-        if (allowed.includes(file.mimetype)) {
+        const hasAudioExt = /\.(m4a|mp4|mp3|wav|webm|aac|ogg|3gp|3gpp|flac|caf)$/i.test(
+          file.originalname || '',
+        );
+        if (
+          file.mimetype.startsWith('audio/') ||
+          allowedMimes.includes(file.mimetype) ||
+          hasAudioExt
+        ) {
           cb(null, true);
         } else {
           cb(
             new BadRequestException(
-              `Audio type "${file.mimetype}" not supported. Send webm, mp4, mp3, wav, m4a, or ogg.`,
+              `Audio type "${file.mimetype}" not supported. Accepted: webm, mp4, mp3, wav, m4a, aac, ogg, 3gp, flac.`,
             ),
             false,
           );

@@ -3,6 +3,53 @@ import { ConfigService } from '@nestjs/config';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional } from 'class-validator';
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function detectAudioMimeType(buffer: Buffer, fallbackMime?: string): string {
+  if (buffer && buffer.length >= 12) {
+    // WAV: 'RIFF' ... 'WAVE'
+    if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WAVE') {
+      return 'audio/wav';
+    }
+    // OGG: 'OggS'
+    if (buffer.toString('ascii', 0, 4) === 'OggS') {
+      return 'audio/ogg';
+    }
+    // FLAC: 'fLaC'
+    if (buffer.toString('ascii', 0, 4) === 'fLaC') {
+      return 'audio/flac';
+    }
+    // MP3 ID3: 'ID3'
+    if (buffer.toString('ascii', 0, 3) === 'ID3') {
+      return 'audio/mpeg';
+    }
+    // MP4 / M4A: '....ftyp'
+    if (buffer.toString('ascii', 4, 8) === 'ftyp') {
+      return 'audio/mp4';
+    }
+    // WebM / EBML: 0x1A 0x45 0xDF 0xA3
+    if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+      return 'audio/webm';
+    }
+    // MP3 sync word: 0xFF followed by 0xFB, 0xF3, 0xF2, 0xE0..
+    if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) {
+      return 'audio/mpeg';
+    }
+  }
+
+  if (
+    fallbackMime &&
+    fallbackMime !== 'application/octet-stream' &&
+    fallbackMime !== 'audio/*' &&
+    fallbackMime.includes('/')
+  ) {
+    return fallbackMime;
+  }
+  return 'audio/m4a';
+}
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -103,58 +150,88 @@ export class VoiceToTechService {
     };
 
     try {
-      let response: DeepgramResponse;
-
       // ── Option A: transcribe from URL ──────────────────────────────────────
       if (dto.audioUrl) {
+        let isLocal = false;
+        let localFilePath: string | null = null;
+
+        // Check if URL points to local uploads or localhost
+        if (dto.audioUrl.startsWith('/uploads/') || dto.audioUrl.startsWith('uploads/')) {
+          isLocal = true;
+          localFilePath = path.join(process.cwd(), dto.audioUrl.startsWith('/') ? dto.audioUrl.slice(1) : dto.audioUrl);
+        } else if (dto.audioUrl.startsWith('file://')) {
+          isLocal = true;
+          localFilePath = dto.audioUrl.replace(/^file:\/\//, '');
+        } else if (
+          dto.audioUrl.includes('localhost') ||
+          dto.audioUrl.includes('127.0.0.1') ||
+          dto.audioUrl.includes('10.0.2.2') ||
+          dto.audioUrl.includes('192.168.')
+        ) {
+          const uploadsIndex = dto.audioUrl.indexOf('/uploads/');
+          if (uploadsIndex !== -1) {
+            isLocal = true;
+            localFilePath = path.join(process.cwd(), dto.audioUrl.slice(uploadsIndex + 1));
+          }
+        }
+
+        if (isLocal && localFilePath && fs.existsSync(localFilePath)) {
+          this.logger.log(`Transcribing local audio file from disk: ${localFilePath}`);
+          const buffer = fs.readFileSync(localFilePath);
+          const mimeType = detectAudioMimeType(buffer, 'audio/m4a');
+          return this.transcribeBuffer(buffer, mimeType);
+        }
+
         this.logger.log(`Transcribing audio URL via Deepgram: ${dto.audioUrl}`);
 
-        const { data } = await axios.post<DeepgramResponse>(
-          `${this.DEEPGRAM_API}?${this.QUERY_PARAMS}`,
-          { url: dto.audioUrl },
-          {
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            timeout: 120000,
-          },
-        );
-        response = data;
+        try {
+          const { data } = await axios.post<DeepgramResponse>(
+            `${this.DEEPGRAM_API}?${this.QUERY_PARAMS}`,
+            { url: dto.audioUrl },
+            {
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              timeout: 120000,
+            },
+          );
+          return this.buildResponse(data);
+        } catch (urlErr: any) {
+          // If Deepgram cloud failed to fetch the URL, try downloading it locally and streaming the buffer
+          this.logger.warn(`Deepgram URL fetch failed (${urlErr.message}), falling back to direct buffer download...`);
+          const dlRes = await axios.get(dto.audioUrl, { responseType: 'arraybuffer', timeout: 30000 });
+          const buffer = Buffer.from(dlRes.data);
+          const headerContentType = dlRes.headers['content-type'];
+          const mimeType = detectAudioMimeType(
+            buffer,
+            typeof headerContentType === 'string' ? headerContentType : undefined,
+          );
+          return this.transcribeBuffer(buffer, mimeType);
+        }
       }
 
       // ── Option B: transcribe from base64 ──────────────────────────────────
       else if (dto.audioBase64) {
         this.logger.log('Transcribing audio from base64 payload via Deepgram');
 
-        // Strip data URI prefix if present: "data:audio/webm;base64,XXXX" → buffer
+        let rawMime = '';
+        if (dto.audioBase64.startsWith('data:')) {
+          const match = dto.audioBase64.match(/data:([^;]+);/);
+          if (match) rawMime = match[1];
+        }
+
         const base64Data = dto.audioBase64.includes(',')
           ? dto.audioBase64.split(',')[1]
           : dto.audioBase64;
 
-        // Detect MIME type from data URI or default to webm (most common from mobile browsers)
-        let mimeType = 'audio/webm';
-        if (dto.audioBase64.startsWith('data:')) {
-          const match = dto.audioBase64.match(/data:([^;]+);/);
-          if (match) mimeType = match[1];
-        }
-
         const audioBuffer = Buffer.from(base64Data, 'base64');
+        const mimeType = detectAudioMimeType(audioBuffer, rawMime);
 
-        const { data } = await axios.post<DeepgramResponse>(
-          `${this.DEEPGRAM_API}?${this.QUERY_PARAMS}`,
-          audioBuffer,
-          {
-            headers: { ...headers, 'Content-Type': mimeType },
-            timeout: 120000,
-          },
-        );
-        response = data;
+        return this.transcribeBuffer(audioBuffer, mimeType);
       }
 
       // ── Neither provided ───────────────────────────────────────────────────
       else {
         return this.manualFallback('No audio source provided — send audioUrl or audioBase64');
       }
-
-      return this.buildResponse(response);
 
     } catch (err: any) {
       const msg = err?.response?.data?.err_msg ?? err?.message ?? 'Unknown error';
@@ -175,8 +252,10 @@ export class VoiceToTechService {
       return this.manualFallback('DEEPGRAM_KEY not configured');
     }
 
+    const effectiveMime = detectAudioMimeType(buffer, mimeType);
+
     try {
-      this.logger.log(`Transcribing ${buffer.length} byte audio buffer (${mimeType}) via Deepgram`);
+      this.logger.log(`Transcribing ${buffer.length} byte audio buffer (${effectiveMime}) via Deepgram`);
 
       const { data } = await axios.post<DeepgramResponse>(
         `${this.DEEPGRAM_API}?${this.QUERY_PARAMS}`,
@@ -184,7 +263,7 @@ export class VoiceToTechService {
         {
           headers: {
             Authorization: `Token ${apiKey}`,
-            'Content-Type': mimeType,
+            'Content-Type': effectiveMime,
           },
           timeout: 120000,
         },

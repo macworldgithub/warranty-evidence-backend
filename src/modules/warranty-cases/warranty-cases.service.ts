@@ -1,13 +1,15 @@
 
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as path from 'path';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNumber, IsBoolean, IsEnum, IsOptional } from 'class-validator';
 import { CaseStatus, FaultCategory, FlagReasonCode, MediaType, PowertrainType, RepairStage, UserRole } from '../../common/enums';
 import { BrandPacksService } from '../brand-packs/brand-packs.service';
 import { StorageService } from '../../common/storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { VoiceToTechService } from '../voice-to-tech/voice-to-tech.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
 import { User, UserDocument } from '../../schemas/user.schema';
 import { PaginatedResponse } from '../../common/dto/pagination.dto';
@@ -144,22 +146,30 @@ export class AddVoiceNoteDto {
   @IsString()
   pinnedToEvidenceKey?: string;
 
-  @ApiProperty({ example: 'Checked the HV disconnect plug. Voltage measured 0.0V across all terminals. Blade battery module showing DTC P0B0D.' })
+  @ApiPropertyOptional({ example: 'Checked the HV disconnect plug. Voltage measured 0.0V across all terminals. Blade battery module showing DTC P0B0D.' })
+  @IsOptional()
   @IsString()
-  transcript: string;
+  transcript?: string;
 
   @ApiPropertyOptional({ example: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' })
   @IsOptional()
   @IsString()
   originalAudioUrl?: string;
 
-  @ApiProperty({ example: 18 })
-  @IsNumber()
-  durationSeconds: number;
-
-  @ApiProperty({ example: 'Jake Smith' })
+  @ApiPropertyOptional({ example: 'data:audio/m4a;base64,...' })
+  @IsOptional()
   @IsString()
-  recordedBy: string;
+  audioBase64?: string;
+
+  @ApiPropertyOptional({ example: 18 })
+  @IsOptional()
+  @IsNumber()
+  durationSeconds?: number;
+
+  @ApiPropertyOptional({ example: 'Jake Smith' })
+  @IsOptional()
+  @IsString()
+  recordedBy?: string;
 }
 
 export class FlagCaseDto {
@@ -199,6 +209,8 @@ export class WarrantyCasesService implements OnModuleInit {
     private brandPacksService: BrandPacksService,
     private storageService: StorageService,
     private notificationsService: NotificationsService,
+    @Inject(forwardRef(() => VoiceToTechService))
+    private voiceToTechService: VoiceToTechService,
   ) { }
 
   private async getAdminEmails(): Promise<string[]> {
@@ -1024,7 +1036,9 @@ export class WarrantyCasesService implements OnModuleInit {
             transcript: vn.transcript || '',
             durationSeconds: vn.durationSeconds || 0,
             recordedAt: vn.recordedAt || new Date().toISOString(),
-            audioStorageUrl: vn.audioStorageUrl || vn.audioUri || '',
+            recordedBy: vn.recordedBy || dto.technicianName || 'Technician',
+            originalAudioUrl: vn.originalAudioUrl || vn.audioStorageUrl || vn.audioUri || '',
+            pinnedToEvidenceKey: vn.pinnedToEvidenceKey || vn.pinnedToRuleKey,
           }))
         : [],
       flagHistory: [],
@@ -1309,21 +1323,91 @@ export class WarrantyCasesService implements OnModuleInit {
     return savedCase;
   }
 
-  async addVoiceNote(caseId: string, dto: AddVoiceNoteDto): Promise<WarrantyCase> {
+  async addVoiceNote(caseId: string, dto: any): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
-    warrantyCase.voiceNotes.push({
-      id: `vn_${Date.now()}`,
-      transcript: dto.transcript,
-      durationSeconds: dto.durationSeconds,
-      recordedBy: dto.recordedBy,
-      recordedAt: new Date().toISOString(),
-      originalAudioUrl: dto.originalAudioUrl,
-      pinnedToEvidenceKey: dto.pinnedToEvidenceKey,
-    } as any);
+    const notesToProcess = Array.isArray(dto?.voiceNotes) ? dto.voiceNotes : [dto];
 
+    for (const noteDto of notesToProcess) {
+      let transcript = noteDto.transcript;
+      let durationSeconds = noteDto.durationSeconds;
+
+      // If transcript is missing, auto-transcribe using Deepgram
+      if (!transcript || transcript.trim().length === 0) {
+        if (noteDto.originalAudioUrl || noteDto.audioBase64 || noteDto.audioUri || noteDto.serverAudioUrl) {
+          try {
+            const res = await this.voiceToTechService.transcribe({
+              audioUrl: noteDto.originalAudioUrl || noteDto.serverAudioUrl || noteDto.audioUri,
+              audioBase64: noteDto.audioBase64,
+              technicianName: noteDto.recordedBy,
+            });
+            if (res?.transcript) {
+              transcript = res.transcript;
+            }
+            if (res?.durationSeconds && !durationSeconds) {
+              durationSeconds = Math.round(res.durationSeconds);
+            }
+          } catch (err: any) {
+            console.error('[WarrantyCasesService] Automatic transcription failed:', err?.message);
+          }
+        }
+      }
+
+      if (!transcript) {
+        transcript = 'Audio voice note recorded.';
+      }
+
+      warrantyCase.voiceNotes.push({
+        id: noteDto.id || `vn_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        transcript: transcript.trim(),
+        durationSeconds: durationSeconds || 8,
+        recordedBy: noteDto.recordedBy || warrantyCase.technicianName || 'Technician',
+        recordedAt: noteDto.recordedAt || new Date().toISOString(),
+        originalAudioUrl: noteDto.originalAudioUrl || noteDto.serverAudioUrl || noteDto.audioUri,
+        pinnedToEvidenceKey: noteDto.pinnedToEvidenceKey || noteDto.pinnedToRuleKey,
+      } as any);
+    }
+
+    warrantyCase.markModified('voiceNotes');
     return (await warrantyCase.save()).toObject();
+  }
+
+  async uploadAndTranscribeVoiceNote(
+    caseId: string,
+    file: Express.Multer.File,
+    pinnedToEvidenceKey?: string,
+    recordedBy?: string,
+  ): Promise<{ case: WarrantyCase; voiceNote: any; transcription: any }> {
+    const warrantyCase = await this.caseModel.findOne({ id: caseId });
+    if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
+
+    const ext = file.originalname ? path.extname(file.originalname) : '.m4a';
+    const cleanExt = ext || '.m4a';
+    const oemFileName = `${warrantyCase.roNumber || caseId}_VoiceNote_${Date.now()}${cleanExt}`;
+    const uploadRes = await this.storageService.uploadFile(file.buffer, file.mimetype, oemFileName, caseId);
+
+    const transcription = await this.voiceToTechService.transcribeBuffer(file.buffer, file.mimetype);
+
+    const voiceNote = {
+      id: `vn_${Date.now()}`,
+      transcript: transcription.transcript || 'Audio voice note recorded.',
+      durationSeconds: Math.round(transcription.durationSeconds || 8),
+      recordedBy: recordedBy || warrantyCase.technicianName || 'Technician',
+      recordedAt: new Date().toISOString(),
+      originalAudioUrl: uploadRes.url,
+      pinnedToEvidenceKey: pinnedToEvidenceKey,
+    };
+
+    warrantyCase.voiceNotes.push(voiceNote as any);
+    warrantyCase.markModified('voiceNotes');
+    const savedCase = (await warrantyCase.save()).toObject();
+
+    return {
+      case: savedCase,
+      voiceNote,
+      transcription,
+    };
   }
 
   async submitFromWorkshop(caseId: string): Promise<WarrantyCase> {

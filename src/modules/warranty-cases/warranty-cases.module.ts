@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WarrantyCasesController } from './warranty-cases.controller';
 import { WarrantyCasesService } from './warranty-cases.service';
@@ -6,6 +6,7 @@ import { BrandPacksModule } from '../brand-packs/brand-packs.module';
 import { SitesModule } from '../sites/sites.module';
 import { BrandsModule } from '../brands/brands.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { VoiceToTechModule } from '../voice-to-tech/voice-to-tech.module';
 import { WarrantyCase, WarrantyCaseSchema } from '../../schemas/warranty-case.schema';
 import { User, UserSchema } from '../../schemas/user.schema';
 
@@ -19,6 +20,7 @@ import { User, UserSchema } from '../../schemas/user.schema';
     SitesModule,
     BrandsModule,
     NotificationsModule,
+    forwardRef(() => VoiceToTechModule),
   ],
   controllers: [WarrantyCasesController],
   providers: [WarrantyCasesService],

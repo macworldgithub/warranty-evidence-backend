@@ -189,6 +189,31 @@ export class WarrantyCasesController {
     return this.casesService.addVoiceNote(id, dto);
   }
 
+  @Post(':id/voice-notes/upload')
+  @ApiOperation({
+    summary: 'Upload audio file, transcribe via Deepgram Nova-2, and attach voice note to warranty case in one step',
+  })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 25 * 1024 * 1024 },
+    }),
+  )
+  async uploadVoiceNote(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('pinnedToEvidenceKey') pinnedToEvidenceKey?: string,
+    @Body('recordedBy') recordedBy?: string,
+    @Headers('x-user-name') xUserName?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No audio file received. Send file as multipart/form-data field named "file".');
+    }
+    const author = recordedBy || xUserName || 'Technician';
+    return this.casesService.uploadAndTranscribeVoiceNote(id, file, pinnedToEvidenceKey, author);
+  }
+
   @Post(':id/submit-from-workshop')
   @ApiOperation({
     summary: 'Technician Submit: Enforces all mandatory gates before transitioning to Awaiting Review',
