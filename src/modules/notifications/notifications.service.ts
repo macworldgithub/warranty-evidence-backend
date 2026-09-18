@@ -97,7 +97,7 @@ export class NotificationsService implements OnModuleInit {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) {}
+  ) { }
 
   onModuleInit() {
     // 1. SMTP Initialization
@@ -194,15 +194,9 @@ export class NotificationsService implements OnModuleInit {
         { $pull: { fcmTokens: { token } } },
       );
 
-      // Add to target user with query fallback
-      const query = {
-        $or: [
-          { id: userId },
-          { email: userId },
-        ],
-      };
-      const updateResult = await this.userModel.updateOne(
-        query,
+      // Add to target user
+      await this.userModel.updateOne(
+        { id: userId },
         {
           $push: {
             fcmTokens: {
@@ -213,23 +207,6 @@ export class NotificationsService implements OnModuleInit {
           },
         },
       );
-
-      // If user document was not matched, link to default technician usr_tech_1 so token is not lost
-      if (updateResult.matchedCount === 0) {
-        this.logger.warn(`[FCM] User '${userId}' not found in MongoDB. Linking token to default technician 'usr_tech_1'`);
-        await this.userModel.updateOne(
-          { id: 'usr_tech_1' },
-          {
-            $push: {
-              fcmTokens: {
-                token,
-                platform,
-                updatedAt: new Date(),
-              },
-            },
-          },
-        );
-      }
 
       return {
         success: true,
@@ -259,24 +236,8 @@ export class NotificationsService implements OnModuleInit {
 
   async getUserDeviceTokens(userId: string): Promise<string[]> {
     try {
-      const user = await this.userModel.findOne({
-        $or: [{ id: userId }, { email: userId }],
-      }).lean();
-      let tokens = (user?.fcmTokens || []).map((t) => t.token).filter(Boolean);
-
-      // Fallback: if no tokens registered specifically under this userId, retrieve tokens from default technician
-      if (tokens.length === 0) {
-        const defaultTech = await this.userModel.findOne({ id: 'usr_tech_1' }).lean();
-        tokens = (defaultTech?.fcmTokens || []).map((t) => t.token).filter(Boolean);
-      }
-
-      // Also get tokens from any active technician if still empty
-      if (tokens.length === 0) {
-        const anyTechTokens = await this.getRoleDeviceTokens('TECHNICIAN');
-        tokens = anyTechTokens;
-      }
-
-      return tokens;
+      const user = await this.userModel.findOne({ id: userId }).lean();
+      return (user?.fcmTokens || []).map((t) => t.token).filter(Boolean);
     } catch {
       return [];
     }
@@ -324,6 +285,7 @@ export class NotificationsService implements OnModuleInit {
       },
       data: {
         ...options.data,
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
         timestamp: String(Date.now()),
       },
       android: {
@@ -474,7 +436,7 @@ export class NotificationsService implements OnModuleInit {
     const techTokens = await this.getUserDeviceTokens(technicianId);
     return this.sendPushNotification({
       tokens: techTokens.length > 0 ? techTokens : undefined,
-      topic: 'warranty-techs',
+      topic: techTokens.length === 0 ? `tech-${technicianId}` : undefined,
       title: `✅ Claim Approved: RO #${caseData.roNumber}`,
       body: `Your warranty claim has been approved under OEM Claim #${caseData.claimNumber}. Case file locked.`,
       data: {
@@ -495,7 +457,7 @@ export class NotificationsService implements OnModuleInit {
     const reason = flagData.reasonCode ? flagData.reasonCode.replace(/_/g, ' ') : 'Evidence Rejected';
     return this.sendPushNotification({
       tokens: techTokens.length > 0 ? techTokens : undefined,
-      topic: 'warranty-techs',
+      topic: techTokens.length === 0 ? `tech-${technicianId}` : undefined,
       title: `⚠️ Action Required: RO #${caseData.roNumber}`,
       body: `${flagData.flaggedBy || 'Reviewer'} flagged ${flagData.evidenceRuleKey} (${reason}). Tap to update evidence.`,
       data: {
