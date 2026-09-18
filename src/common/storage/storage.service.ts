@@ -172,8 +172,12 @@ export class StorageService {
   }
 
   private ensureLocalDir(dir: string): void {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not create directory ${dir}: ${err?.message}`);
     }
   }
 
