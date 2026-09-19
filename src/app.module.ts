@@ -27,6 +27,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         const uri = configService.get<string>('MONGODB_URI');
         return {
           uri,
+          serverSelectionTimeoutMS: 5000,
           connectionFactory: (connection) => {
             connection.on('connected', () => {
               console.log('🍃 MongoDB Atlas Connected Successfully');
