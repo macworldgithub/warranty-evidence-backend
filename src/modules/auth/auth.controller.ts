@@ -7,6 +7,7 @@ import {
   SendRegistrationOtpDto,
   VerifyRegistrationOtpDto,
   ForgotPasswordDto,
+  VerifyResetOtpDto,
   ResetPasswordDto,
   GenericAuthResponseDto,
   LoginResponseDto,
@@ -73,6 +74,13 @@ export class AuthController {
   @ApiResponse({ status: 200, type: GenericAuthResponseDto })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<GenericAuthResponseDto> {
     return this.authService.sendForgotPasswordOtp(dto);
+  }
+
+  @Post('verify-reset-otp')
+  @ApiOperation({ summary: 'Verify 6-digit password reset OTP before allowing new password' })
+  @ApiResponse({ status: 200, type: GenericAuthResponseDto })
+  async verifyResetOtp(@Body() dto: VerifyResetOtpDto): Promise<GenericAuthResponseDto> {
+    return this.authService.verifyResetOtp(dto);
   }
 
   @Post('reset-password')

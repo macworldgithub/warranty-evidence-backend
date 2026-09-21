@@ -134,6 +134,16 @@ export class ForgotPasswordDto {
   email: string;
 }
 
+export class VerifyResetOtpDto {
+  @ApiProperty({ example: 'technician@booran.com.au' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  otp: string;
+}
+
 export class ResetPasswordDto {
   @ApiProperty({ example: 'technician@booran.com.au' })
   @IsEmail()
@@ -494,6 +504,32 @@ export class AuthService implements OnModuleInit {
     return {
       success: true,
       message: `Password reset code sent to ${email}`,
+    };
+  }
+
+  async verifyResetOtp(dto: VerifyResetOtpDto): Promise<GenericAuthResponseDto> {
+    if (!dto.email || !dto.otp) {
+      throw new BadRequestException('Email and verification code are required.');
+    }
+
+    const email = dto.email.toLowerCase().trim();
+    const otpRecord = await this.otpModel.findOne({
+      email,
+      purpose: 'PASSWORD_RESET',
+    });
+
+    if (!otpRecord || otpRecord.otp !== dto.otp.trim()) {
+      throw new BadRequestException('Incorrect verification code. Please check and try again.');
+    }
+
+    if (new Date() > otpRecord.expiresAt) {
+      await this.otpModel.deleteOne({ _id: otpRecord._id });
+      throw new BadRequestException('Verification code has expired. Please request a new code.');
+    }
+
+    return {
+      success: true,
+      message: 'Verification code confirmed. You can now set your new password.',
     };
   }
 
