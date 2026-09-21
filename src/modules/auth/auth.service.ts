@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -56,6 +56,29 @@ export class SignupDto {
   password: string;
 
   @ApiProperty({ enum: UserRole, example: UserRole.TECHNICIAN })
+  @IsEnum(UserRole)
+  role: UserRole;
+
+  @ApiPropertyOptional({ example: 'site_cranbourne_byd' })
+  @IsOptional()
+  @IsString()
+  siteId?: string;
+}
+
+export class CreateUserDto {
+  @ApiProperty({ example: 'Sarah Jenkins' })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ example: 'sarah.j@booran.com.au' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'Booran2026!' })
+  @IsString()
+  password: string;
+
+  @ApiProperty({ enum: UserRole, example: UserRole.ADMIN })
   @IsEnum(UserRole)
   role: UserRole;
 
@@ -206,6 +229,63 @@ export class AuthService implements OnModuleInit {
     }));
   }
 
+  async createUser(dto: CreateUserDto): Promise<UserProfileDto> {
+    if (!dto.email || !dto.name || !dto.password) {
+      throw new BadRequestException('Name, email, and password are required.');
+    }
+
+    const email = dto.email.toLowerCase().trim();
+    const existing = await this.userModel.findOne({ email }).lean();
+    if (existing) {
+      throw new BadRequestException('An account with this email address already exists.');
+    }
+
+    const role = dto.role === UserRole.ADMIN ? UserRole.ADMIN : UserRole.TECHNICIAN;
+    const siteId = dto.siteId || 'site_cranbourne_byd';
+
+    const newUser = new this.userModel({
+      id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: dto.name.trim(),
+      email,
+      passwordHash: dto.password,
+      role,
+      defaultSiteId: siteId,
+      authorizedSiteIds:
+        role === UserRole.ADMIN
+          ? ['site_cranbourne_byd', 'site_dandenong_multi', 'site_cheltenham_mg', 'site_berwick_toyota_ford']
+          : [siteId],
+      isActive: true,
+    });
+
+    const saved = (await newUser.save()).toObject();
+
+    return {
+      id: saved.id,
+      name: saved.name,
+      email: saved.email,
+      role: saved.role as UserRole,
+      defaultSiteId: saved.defaultSiteId,
+      authorizedSiteIds: saved.authorizedSiteIds,
+    };
+  }
+
+  async deleteUser(id: string): Promise<{ success: boolean; message: string }> {
+    if (id === 'usr_admin_1') {
+      throw new BadRequestException('The primary system administrator account cannot be deleted.');
+    }
+
+    const user = await this.userModel.findOne({ id });
+    if (!user) {
+      throw new NotFoundException(`User with ID '${id}' not found.`);
+    }
+
+    await this.userModel.deleteOne({ id });
+    return {
+      success: true,
+      message: `User account for '${user.name}' has been deleted successfully.`,
+    };
+  }
+
   async login(dto: LoginDto): Promise<LoginResponseDto> {
     if (!dto.email || !dto.password) {
       throw new BadRequestException('Email and password are required.');
@@ -252,7 +332,8 @@ export class AuthService implements OnModuleInit {
       throw new BadRequestException('An account with this email address already exists.');
     }
 
-    const role = dto.role === UserRole.TECHNICIAN ? UserRole.TECHNICIAN : UserRole.ADMIN;
+    // Public registration is restricted to Workshop Technicians
+    const role = UserRole.TECHNICIAN;
     const siteId = dto.siteId || 'site_cranbourne_byd';
 
     const newUser = new this.userModel({
@@ -262,9 +343,7 @@ export class AuthService implements OnModuleInit {
       passwordHash: dto.password,
       role,
       defaultSiteId: siteId,
-      authorizedSiteIds: role === UserRole.ADMIN 
-        ? ['site_cranbourne_byd', 'site_dandenong_multi', 'site_cheltenham_mg', 'site_berwick_toyota_ford']
-        : [siteId],
+      authorizedSiteIds: [siteId],
       isActive: true,
     });
 
@@ -345,7 +424,8 @@ export class AuthService implements OnModuleInit {
       throw new BadRequestException('An account with this email address already exists.');
     }
 
-    const role = dto.role === UserRole.TECHNICIAN ? UserRole.TECHNICIAN : UserRole.ADMIN;
+    // Public self-registration is strictly for Technicians
+    const role = UserRole.TECHNICIAN;
     const siteId = dto.siteId || 'site_cranbourne_byd';
 
     const newUser = new this.userModel({
@@ -355,9 +435,7 @@ export class AuthService implements OnModuleInit {
       passwordHash: dto.password || 'Booran2026!',
       role,
       defaultSiteId: siteId,
-      authorizedSiteIds: role === UserRole.ADMIN 
-        ? ['site_cranbourne_byd', 'site_dandenong_multi', 'site_cheltenham_mg', 'site_berwick_toyota_ford']
-        : [siteId],
+      authorizedSiteIds: [siteId],
       isActive: true,
     });
 

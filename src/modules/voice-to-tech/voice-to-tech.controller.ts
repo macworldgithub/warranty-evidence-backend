@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -27,8 +28,11 @@ export class VoiceToTechController {
   // ─── Status & Config ─────────────────────────────────────────────────────
   @Get('status')
   @ApiOperation({ summary: 'Check Deepgram service configuration & status' })
-  getStatus() {
+  getStatus(@Req() req?: any) {
     const hasKey = !!this.voiceService.getApiKey();
+    const host = req?.headers?.host || 'warranty-evidence.omnisuiteai.com';
+    const isHttps = req?.headers?.['x-forwarded-proto'] === 'https' || !host.includes('localhost');
+    const wsProto = isHttps ? 'wss:' : 'ws:';
     return {
       status: hasKey ? 'ready' : 'missing_api_key',
       engine: 'Deepgram Nova-2',
@@ -37,7 +41,7 @@ export class VoiceToTechController {
         restJson: 'POST /api/v1/voice-to-tech/transcribe',
         restUpload: 'POST /api/v1/voice-to-tech/transcribe/upload',
         sseStream: 'GET /api/v1/voice-to-tech/stream?audioUrl=...',
-        liveWebSocket: 'ws://localhost:4000/api/v1/voice-to-tech/live',
+        liveWebSocket: `${wsProto}//${host}/api/v1/voice-to-tech/live`,
         interactiveDemo: 'GET /api/v1/voice-to-tech/demo',
         token: 'GET /api/v1/voice-to-tech/token',
       },
@@ -497,7 +501,7 @@ const DEMO_HTML = `<!DOCTYPE html>
     <div class="endpoints-footer">
       <strong>Available Streaming Endpoints:</strong>
       <ul style="margin-top: 8px; margin-left: 20px; line-height: 1.8;">
-        <li>WebSocket (Live Dictation): <code>ws://localhost:4000/api/v1/voice-to-tech/live</code></li>
+        <li>WebSocket (Live Dictation): <code id="wsEndpointDisplay">wss://warranty-evidence.omnisuiteai.com/api/v1/voice-to-tech/live</code></li>
         <li>Server-Sent Events (URL Stream): <code>GET /api/v1/voice-to-tech/stream?audioUrl=...</code></li>
         <li>REST (JSON Payload): <code>POST /api/v1/voice-to-tech/transcribe</code> (timeout: 120s)</li>
       </ul>

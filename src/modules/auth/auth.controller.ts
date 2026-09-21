@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   AuthService,
@@ -11,6 +11,7 @@ import {
   GenericAuthResponseDto,
   LoginResponseDto,
   UserProfileDto,
+  CreateUserDto,
 } from './auth.service';
 
 @ApiTags('Authentication & Role Access')
@@ -93,5 +94,18 @@ export class AuthController {
   @ApiResponse({ status: 200, type: [UserProfileDto] })
   async findAllUsers(): Promise<UserProfileDto[]> {
     return this.authService.findAllUsers();
+  }
+
+  @Post('users')
+  @ApiOperation({ summary: 'Create a new user account (Group Admin)' })
+  @ApiResponse({ status: 201, type: UserProfileDto })
+  async createUser(@Body() dto: CreateUserDto): Promise<UserProfileDto> {
+    return this.authService.createUser(dto);
+  }
+
+  @Delete('users/:id')
+  @ApiOperation({ summary: 'Delete user account (Group Admin)' })
+  async deleteUser(@Param('id') id: string): Promise<{ success: boolean; message: string }> {
+    return this.authService.deleteUser(id);
   }
 }
