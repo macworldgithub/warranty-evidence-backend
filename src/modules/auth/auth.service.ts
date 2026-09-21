@@ -397,7 +397,6 @@ export class AuthService implements OnModuleInit {
     return {
       success: true,
       message: `Verification code sent to ${email}`,
-      devOtp: otp,
     };
   }
 
@@ -495,7 +494,6 @@ export class AuthService implements OnModuleInit {
     return {
       success: true,
       message: `Password reset code sent to ${email}`,
-      devOtp: otp,
     };
   }
 
