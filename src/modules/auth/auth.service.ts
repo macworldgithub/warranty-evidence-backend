@@ -6,6 +6,7 @@ import { IsString, IsEmail, IsEnum, IsOptional } from 'class-validator';
 import { UserRole } from '../../common/enums';
 import { User, UserDocument } from '../../schemas/user.schema';
 import { Otp, OtpDocument } from '../../schemas/otp.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export class UserProfileDto {
   @ApiProperty({ example: 'usr_admin_1' })
@@ -171,6 +172,7 @@ export class AuthService implements OnModuleInit {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Otp.name) private otpModel: Model<OtpDocument>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -386,6 +388,12 @@ export class AuthService implements OnModuleInit {
 
     console.log(`📧 [AUTH OTP] Registration verification code for ${email}: ${otp}`);
 
+    try {
+      await this.notificationsService.sendRegistrationOtpEmail(email, otp);
+    } catch (err: any) {
+      console.error(`⚠️ [AUTH OTP] Failed to send registration email to ${email}:`, err?.message || err);
+    }
+
     return {
       success: true,
       message: `Verification code sent to ${email}`,
@@ -477,6 +485,12 @@ export class AuthService implements OnModuleInit {
     );
 
     console.log(`📧 [AUTH OTP] Password reset code for ${email}: ${otp}`);
+
+    try {
+      await this.notificationsService.sendForgotPasswordOtpEmail(email, otp);
+    } catch (err: any) {
+      console.error(`⚠️ [AUTH OTP] Failed to send password reset email to ${email}:`, err?.message || err);
+    }
 
     return {
       success: true,

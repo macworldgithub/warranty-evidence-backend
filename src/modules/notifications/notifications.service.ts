@@ -405,6 +405,120 @@ export class NotificationsService implements OnModuleInit {
     return this.sendMail({ to: targetEmail, subject, html });
   }
 
+  async sendRegistrationOtpEmail(targetEmail: string, otp: string) {
+    const subject = `[Booran Warranty] Your Registration Verification Code: ${otp}`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 24px; }
+    .container { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    .header { background: #0b192c; padding: 28px 24px; text-align: center; }
+    .logo { color: #3b82f6; font-size: 22px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin: 0; }
+    .subhead { color: #94a3b8; font-size: 13px; margin-top: 6px; }
+    .badge-bar { background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 20px; font-size: 13px; font-weight: 600; color: #1e40af; }
+    .content { padding: 32px 24px; color: #1e293b; text-align: center; }
+    .title { font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 12px; color: #0f172a; }
+    .desc { font-size: 14px; color: #64748b; line-height: 1.6; margin: 0 0 24px; }
+    .otp-card { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 10px; padding: 18px 24px; display: inline-block; margin: 0 auto 24px; }
+    .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; color: #0f172a; letter-spacing: 8px; margin: 0; }
+    .expiry { font-size: 13px; color: #e11d48; font-weight: 600; margin-top: 8px; }
+    .security-note { background: #f8fafc; border-radius: 8px; padding: 14px; text-align: left; font-size: 12px; color: #64748b; line-height: 1.5; border: 1px solid #e2e8f0; margin-top: 8px; }
+    .footer { background: #f8fafc; padding: 18px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">Booran Warranty</div>
+      <div class="subhead">Automated Dealership Portal</div>
+    </div>
+    <div class="badge-bar">
+      🔐 Registration Security Verification
+    </div>
+    <div class="content">
+      <h2 class="title">Verify Your Email Address</h2>
+      <p class="desc">
+        Welcome to the Booran Warranty Evidence Portal. Please use the 6-digit verification code below to complete your account registration:
+      </p>
+      <div class="otp-card">
+        <div class="otp-code">${escapeHtml(otp)}</div>
+        <div class="expiry">⏱ Valid for 10 minutes</div>
+      </div>
+      <div class="security-note">
+        <strong>Security Notice:</strong> Never share this code with anyone. Booran Warranty staff and administrators will never ask for your verification code. If you did not attempt to register an account, please safely ignore this email.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} Booran Motor Group · OmniSuiteAI Warranty Evidence
+    </div>
+  </div>
+</body>
+</html>
+    `;
+    const text = `[Booran Warranty] Your Registration Verification Code is: ${otp}\n\nThis code will expire in 10 minutes.\nNever share this code with anyone.`;
+    return this.sendMail({ to: targetEmail, subject, html, text });
+  }
+
+  async sendForgotPasswordOtpEmail(targetEmail: string, otp: string) {
+    const subject = `[Booran Warranty] Your Password Reset Code: ${otp}`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 24px; }
+    .container { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    .header { background: #0b192c; padding: 28px 24px; text-align: center; }
+    .logo { color: #3b82f6; font-size: 22px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin: 0; }
+    .subhead { color: #94a3b8; font-size: 13px; margin-top: 6px; }
+    .badge-bar { background: #fff1f2; border-left: 4px solid #e11d48; padding: 12px 20px; font-size: 13px; font-weight: 600; color: #be123c; }
+    .content { padding: 32px 24px; color: #1e293b; text-align: center; }
+    .title { font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 12px; color: #0f172a; }
+    .desc { font-size: 14px; color: #64748b; line-height: 1.6; margin: 0 0 24px; }
+    .otp-card { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 10px; padding: 18px 24px; display: inline-block; margin: 0 auto 24px; }
+    .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; color: #0f172a; letter-spacing: 8px; margin: 0; }
+    .expiry { font-size: 13px; color: #e11d48; font-weight: 600; margin-top: 8px; }
+    .security-note { background: #f8fafc; border-radius: 8px; padding: 14px; text-align: left; font-size: 12px; color: #64748b; line-height: 1.5; border: 1px solid #e2e8f0; margin-top: 8px; }
+    .footer { background: #f8fafc; padding: 18px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">Booran Warranty</div>
+      <div class="subhead">Automated Dealership Portal</div>
+    </div>
+    <div class="badge-bar">
+      🔑 Password Reset Request
+    </div>
+    <div class="content">
+      <h2 class="title">Reset Your Password</h2>
+      <p class="desc">
+        We received a request to reset your password for your Booran Warranty account. Use the 6-digit verification code below to set a new password:
+      </p>
+      <div class="otp-card">
+        <div class="otp-code">${escapeHtml(otp)}</div>
+        <div class="expiry">⏱ Valid for 10 minutes</div>
+      </div>
+      <div class="security-note">
+        <strong>Security Notice:</strong> If you did not request a password reset, please ignore this email or contact your administrator if you suspect unauthorized activity.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} Booran Motor Group · OmniSuiteAI Warranty Evidence
+    </div>
+  </div>
+</body>
+</html>
+    `;
+    const text = `[Booran Warranty] Your Password Reset Code is: ${otp}\n\nThis code will expire in 10 minutes.\nIf you did not request this, please ignore this email.`;
+    return this.sendMail({ to: targetEmail, subject, html, text });
+  }
+
   // ─── Lifecycle FCM Push Helpers ─────────────────────────────────────────
 
   async sendNewTicketPushToAdmins(caseData: {
