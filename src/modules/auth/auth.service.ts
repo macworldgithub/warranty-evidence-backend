@@ -89,6 +89,33 @@ export class CreateUserDto {
   siteId?: string;
 }
 
+export class UpdateUserDto {
+  @ApiPropertyOptional({ example: 'Jake Smith' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'technician@booran.com.au' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ enum: UserRole, example: UserRole.TECHNICIAN })
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
+
+  @ApiPropertyOptional({ example: 'site_cranbourne_byd' })
+  @IsOptional()
+  @IsString()
+  siteId?: string;
+
+  @ApiPropertyOptional({ example: 'NewPass2026!' })
+  @IsOptional()
+  @IsString()
+  password?: string;
+}
+
 export class SendRegistrationOtpDto {
   @ApiProperty({ example: 'technician@booran.com.au' })
   @IsEmail()
@@ -295,6 +322,34 @@ export class AuthService implements OnModuleInit {
     return {
       success: true,
       message: `User account for '${user.name}' has been deleted successfully.`,
+    };
+  }
+
+  async updateUser(id: string, dto: UpdateUserDto): Promise<UserProfileDto> {
+    const user = await this.userModel.findOne({ id });
+    if (!user) {
+      throw new NotFoundException(`User with ID '${id}' not found.`);
+    }
+
+    if (dto.name) user.name = dto.name.trim();
+    if (dto.email) user.email = dto.email.toLowerCase().trim();
+    if (dto.role) user.role = dto.role;
+    if (dto.siteId) {
+      user.defaultSiteId = dto.siteId;
+      if (!user.authorizedSiteIds?.includes(dto.siteId)) {
+        user.authorizedSiteIds = [...(user.authorizedSiteIds || []), dto.siteId];
+      }
+    }
+    if (dto.password) user.passwordHash = dto.password;
+
+    const saved = await user.save();
+    return {
+      id: saved.id,
+      name: saved.name,
+      email: saved.email,
+      role: saved.role as UserRole,
+      defaultSiteId: saved.defaultSiteId,
+      authorizedSiteIds: saved.authorizedSiteIds,
     };
   }
 
