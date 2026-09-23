@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+const PDFDocument = require('pdfkit');
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -132,13 +132,62 @@ export class LoanAgreementPdfService {
         doc.roundedRect(left, y, sigBoxWidth, 80, 5).strokeColor('#CBD5E1').lineWidth(1).stroke();
         doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold').text('BORROWER ELECTRONIC SIGNATURE', left + 10, y + 8);
 
-        if (agreementData.signatures?.borrowerSignatureDataUrl?.startsWith('data:image')) {
+        const sigData = agreementData.signatures?.borrowerSignatureDataUrl;
+        const isSvgPath = sigData && (sigData.startsWith('M') || sigData.includes(' L') || sigData.includes(' C'));
+        const isBase64Img = sigData && sigData.startsWith('data:image') && !sigData.includes('CONFIRMED');
+
+        if (isSvgPath) {
           try {
-            const base64Data = agreementData.signatures.borrowerSignatureDataUrl.replace(/^data:image\/\w+;base64,/, '');
+            const matches = [...sigData.matchAll(/([0-9.]+),([0-9.]+)/g)];
+            if (matches.length > 1) {
+              const xs = matches.map((m: any) => parseFloat(m[1]));
+              const ys = matches.map((m: any) => parseFloat(m[2]));
+              const minX = Math.min(...xs);
+              const maxX = Math.max(...xs);
+              const minY = Math.min(...ys);
+              const maxY = Math.max(...ys);
+              const w = Math.max(maxX - minX, 10);
+              const h = Math.max(maxY - minY, 10);
+
+              const targetW = sigBoxWidth - 30;
+              const targetH = 38;
+              const scale = Math.min(targetW / w, targetH / h, 0.7);
+              const offsetX = (targetW - (w * scale)) / 2;
+              const offsetY = (targetH - (h * scale)) / 2;
+
+              doc.save();
+              doc.translate(left + 15 + offsetX - (minX * scale), y + 20 + offsetY - (minY * scale));
+              doc.scale(scale);
+              doc.path(sigData)
+                .lineWidth(Math.max(1.8 / scale, 1.4))
+                .strokeColor('#1E3A8A')
+                .lineCap('round')
+                .lineJoin('round')
+                .stroke();
+              doc.restore();
+            } else {
+              doc.save();
+              doc.translate(left + 15, y + 20);
+              doc.scale(0.35);
+              doc.path(sigData)
+                .lineWidth(5)
+                .strokeColor('#1E3A8A')
+                .lineCap('round')
+                .lineJoin('round')
+                .stroke();
+              doc.restore();
+            }
+          } catch (pathErr) {
+            try { doc.restore(); } catch (_) {}
+            doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold').text(agreementData.customer?.name || 'Digitally Signed', left + 10, y + 30);
+          }
+        } else if (isBase64Img) {
+          try {
+            const base64Data = sigData.replace(/^data:image\/\w+;base64,/, '');
             const imgBuffer = Buffer.from(base64Data, 'base64');
             doc.image(imgBuffer, left + 10, y + 20, { width: 120, height: 35 });
           } catch (e) {
-            doc.fillColor('#0F172A').fontSize(12).font('Helvetica-Bold').text(agreementData.customer?.name || 'Digitally Signed', left + 10, y + 30);
+            doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold').text(agreementData.customer?.name || 'Digitally Signed', left + 10, y + 30);
           }
         } else {
           doc.fillColor('#0F172A').fontSize(11).font('Helvetica-Bold').text(agreementData.customer?.name || 'Digitally Signed', left + 10, y + 30);

@@ -76,19 +76,24 @@ export class LoanAgreementsController {
   @ApiOperation({ summary: 'Stream signed agreement PDF' })
   async getPdf(@Param('id') id: string, @Res() res: Response) {
     const agreement = await this.service.findById(id);
-    if (!agreement.pdfStorageUrl) {
-      return res.status(404).json({ message: 'Signed PDF not generated yet' });
-    }
 
-    const cleanPath = agreement.pdfStorageUrl.replace(/^\//, '');
-    const absolutePath = path.resolve(__dirname, '..', '..', '..', cleanPath);
+    const cleanPath = agreement.pdfStorageUrl ? agreement.pdfStorageUrl.replace(/^\//, '') : null;
+    const absolutePath = cleanPath ? path.resolve(__dirname, '..', '..', '..', cleanPath) : null;
 
-    if (fs.existsSync(absolutePath)) {
+    if (absolutePath && fs.existsSync(absolutePath)) {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="${agreement.agreementNumber}.pdf"`);
       return fs.createReadStream(absolutePath).pipe(res);
     }
 
-    return res.status(404).json({ message: 'PDF file not found on disk' });
+    // Generate dynamically on the fly
+    try {
+      const { buffer } = await this.service.generatePdfForAgreement(agreement);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${agreement.agreementNumber}.pdf"`);
+      return res.send(buffer);
+    } catch (err: any) {
+      return res.status(500).json({ message: 'Failed to generate PDF', error: err?.message });
+    }
   }
 }

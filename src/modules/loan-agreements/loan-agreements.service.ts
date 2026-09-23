@@ -265,6 +265,11 @@ export class LoanAgreementsService implements OnModuleInit {
     return agreement;
   }
 
+  // ── GENERATE PDF BUFFER ──────────────────────────────────────────────────
+  async generatePdfForAgreement(agreement: any) {
+    return this.pdfService.generateLoanAgreementPdf(agreement);
+  }
+
   // ── ISSUE NEW LOAN AGREEMENT ─────────────────────────────────────────────
   async issueAgreement(dto: CreateLoanAgreementDto, staffUser?: any) {
     // Generate clean agreement number: BMG-{SITE}-{YEAR}-{SEQ}
