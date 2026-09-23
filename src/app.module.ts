@@ -14,6 +14,7 @@ import { VoiceToTechModule } from './modules/voice-to-tech/voice-to-tech.module'
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SubmissionPackModule } from './modules/submission-pack/submission-pack.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { LoanAgreementsModule } from './modules/loan-agreements/loan-agreements.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     SubmissionPackModule,
     DashboardModule,
     StorageModule,
+    LoanAgreementsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
