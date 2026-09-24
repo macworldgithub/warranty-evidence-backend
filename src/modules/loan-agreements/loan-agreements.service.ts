@@ -20,7 +20,7 @@ export class LoanAgreementsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.seedInitialAgreements();
+    // Mock loan agreements auto-seeding disabled to prevent injecting demo data
   }
 
   // ── Seed realistic agreements if collection is empty ───────────────────────
@@ -215,14 +215,24 @@ export class LoanAgreementsService implements OnModuleInit {
     const now = Date.now();
     const in60Min = now + 3600000;
 
+    let totalCars = agreements.length;
+    let availableCount = 0;
     let outNowCount = 0;
     let dueSoonCount = 0;
     let overdueCount = 0;
 
     for (const agr of agreements) {
-      if (agr.status === 'ACTIVE' || agr.status === 'DUE_SOON' || agr.status === 'OVERDUE') {
-        outNowCount++;
-        const dueTime = new Date(agr.dueBackDateTime).getTime();
+      if (agr.status === 'RETURNED') {
+        availableCount++;
+        continue;
+      }
+      if (agr.status === 'CANCELLED') {
+        continue;
+      }
+
+      outNowCount++;
+      const dueTime = agr.dueBackDateTime ? new Date(agr.dueBackDateTime).getTime() : 0;
+      if (dueTime) {
         if (dueTime < now) {
           overdueCount++;
         } else if (dueTime <= in60Min) {
@@ -231,11 +241,8 @@ export class LoanAgreementsService implements OnModuleInit {
       }
     }
 
-    // Available loaner pool across Booran dealerships
-    const totalLoanerFleet = siteId && siteId !== 'all' ? 12 : 36;
-    const availableCount = Math.max(0, totalLoanerFleet - outNowCount);
-
     return {
+      totalCars,
       available: availableCount,
       outNow: outNowCount,
       dueSoon: dueSoonCount,
@@ -249,11 +256,35 @@ export class LoanAgreementsService implements OnModuleInit {
     if (siteId && siteId !== 'all') {
       query.siteId = siteId;
     }
+
+    const agreements = await this.loanAgreementModel.find(query).sort({ createdAt: -1 }).lean();
+    const now = Date.now();
+    const in60Min = now + 3600000;
+
+    const enriched = agreements.map((agr) => {
+      if (agr.status === 'RETURNED' || agr.status === 'CANCELLED') {
+        return agr;
+      }
+      const dueTime = agr.dueBackDateTime ? new Date(agr.dueBackDateTime).getTime() : 0;
+      let dynamicStatus = 'ACTIVE';
+      if (dueTime) {
+        if (dueTime < now) {
+          dynamicStatus = 'OVERDUE';
+        } else if (dueTime <= in60Min) {
+          dynamicStatus = 'DUE_SOON';
+        }
+      }
+      return {
+        ...agr,
+        status: dynamicStatus,
+      };
+    });
+
     if (status && status !== 'all') {
-      query.status = status;
+      return enriched.filter((a) => a.status === status);
     }
 
-    return this.loanAgreementModel.find(query).sort({ createdAt: -1 }).lean();
+    return enriched;
   }
 
   // ── GET BY ID ────────────────────────────────────────────────────────────
@@ -393,5 +424,57 @@ export class LoanAgreementsService implements OnModuleInit {
 
     const saved = await agreement.save();
     return saved.toObject();
+  }
+
+  // ── UPDATE LOAN AGREEMENT ────────────────────────────────────────────────
+  async update(id: string, dto: any) {
+    const agreement = await this.loanAgreementModel.findOne({ id });
+    if (!agreement) {
+      throw new NotFoundException(`Loan agreement ${id} not found.`);
+    }
+
+    if (dto.customer) {
+      agreement.customer = {
+        ...(agreement.customer as any),
+        ...dto.customer,
+      };
+    }
+
+    if (dto.vehicle) {
+      agreement.vehicle = {
+        ...(agreement.vehicle as any),
+        ...dto.vehicle,
+      };
+    }
+
+    if (dto.dueBackDateTime !== undefined) agreement.dueBackDateTime = dto.dueBackDateTime;
+    if (dto.loanStartDateTime !== undefined) agreement.loanStartDateTime = dto.loanStartDateTime;
+    if (dto.dailyKmCap !== undefined) agreement.dailyKmCap = dto.dailyKmCap;
+    if (dto.excessKmRate !== undefined) agreement.excessKmRate = dto.excessKmRate;
+    if (dto.basicInsuranceExcess !== undefined) agreement.basicInsuranceExcess = dto.basicInsuranceExcess;
+    if (dto.purpose !== undefined) agreement.purpose = dto.purpose;
+    if (dto.roNumber !== undefined) agreement.roNumber = dto.roNumber;
+    if (dto.status !== undefined) agreement.status = dto.status;
+    if (dto.siteId !== undefined) agreement.siteId = dto.siteId;
+    if (dto.siteName !== undefined) agreement.siteName = dto.siteName;
+
+    if (dto.outbound) {
+      agreement.outbound = {
+        ...(agreement.outbound as any),
+        ...dto.outbound,
+      };
+    }
+
+    const saved = await agreement.save();
+    return saved.toObject();
+  }
+
+  // ── DELETE LOAN AGREEMENT ────────────────────────────────────────────────
+  async delete(id: string) {
+    const result = await this.loanAgreementModel.deleteOne({ id });
+    if (result.deletedCount === 0) {
+      throw new NotFoundException(`Loan agreement ${id} not found.`);
+    }
+    return { success: true, message: `Loan agreement ${id} deleted successfully.` };
   }
 }

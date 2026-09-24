@@ -109,9 +109,10 @@ export class WarrantyCasesController {
     @Body() dto: CreateWarrantyCaseDto,
     @Headers('authorization') authHeader?: string,
     @Headers('x-user-role') xUserRole?: string,
+    @Headers('x-user-id') xUserId?: string,
   ): Promise<WarrantyCase> {
-    let userId: string | undefined;
-    if (authHeader) {
+    let userId: string | undefined = xUserId;
+    if (!userId && authHeader) {
       const token = authHeader.replace(/^Bearer\s+/i, '');
       const match = token.match(/jwt_token_\d+_(.+)/);
       if (match) {

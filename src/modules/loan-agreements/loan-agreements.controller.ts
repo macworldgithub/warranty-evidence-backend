@@ -2,6 +2,9 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -15,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LoanAgreementsService } from './loan-agreements.service';
 import { CreateLoanAgreementDto } from './dto/create-loan-agreement.dto';
+import { UpdateLoanAgreementDto } from './dto/update-loan-agreement.dto';
 import { SignLoanAgreementDto } from './dto/sign-loan-agreement.dto';
 import { ReturnLoanAgreementDto } from './dto/return-loan-agreement.dto';
 
@@ -82,7 +86,7 @@ export class LoanAgreementsController {
 
     if (absolutePath && fs.existsSync(absolutePath)) {
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${agreement.agreementNumber}.pdf"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${agreement.agreementNumber}.pdf"`);
       return fs.createReadStream(absolutePath).pipe(res);
     }
 
@@ -95,5 +99,29 @@ export class LoanAgreementsController {
     } catch (err: any) {
       return res.status(500).json({ message: 'Failed to generate PDF', error: err?.message });
     }
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update/edit loan vehicle agreement details' })
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateLoanAgreementDto,
+  ) {
+    return this.service.update(id, dto);
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Update/edit loan vehicle agreement details (PUT)' })
+  async updatePut(
+    @Param('id') id: string,
+    @Body() dto: UpdateLoanAgreementDto,
+  ) {
+    return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete/void loan vehicle agreement' })
+  async delete(@Param('id') id: string) {
+    return this.service.delete(id);
   }
 }

@@ -246,6 +246,8 @@ export class WarrantyCasesService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    // Sample Warranty Cases auto-synchronization disabled to prevent injecting mock data
+    return;
     {
       console.log('🍃 Synchronizing sample Warranty Cases into MongoDB Atlas...');
       const defaultCases = [
@@ -979,6 +981,19 @@ export class WarrantyCasesService implements OnModuleInit {
       const user = await this.userModel.findOne({ id: callerUserId }).lean();
       if (user && user.role === UserRole.ADMIN) {
         throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
+      }
+
+      // Rooftop restriction: technicians may only create tickets for their assigned rooftops
+      if (user && user.role === UserRole.TECHNICIAN) {
+        const authorized: string[] = user.authorizedSiteIds ?? [];
+        const defaultSite: string = (user as any).defaultSiteId ?? '';
+        const allAuthorized = authorized.length > 0 ? authorized : (defaultSite ? [defaultSite] : []);
+        if (allAuthorized.length > 0 && !allAuthorized.includes(dto.siteId)) {
+          throw new ForbiddenException(
+            `Access denied: You are not authorised to raise tickets for this rooftop (${dto.siteId}). ` +
+            `Your assigned rooftop(s): ${allAuthorized.join(', ')}.`
+          );
+        }
       }
     }
 
