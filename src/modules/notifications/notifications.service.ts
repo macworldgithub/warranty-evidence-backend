@@ -644,7 +644,7 @@ export class NotificationsService implements OnModuleInit {
       return;
     }
 
-    const appUrl = params.portalUrl || process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = params.portalUrl || process.env.APP_URL || 'https://warranty-evidence.omnisuiteai.com';
     const caseUrl = `${appUrl}/cases/${params.caseId}`;
 
     const subject = `[Booran Warranty] New Ticket Raised: RO #${params.roNumber} (${params.make} ${params.model})`;
@@ -743,7 +743,7 @@ export class NotificationsService implements OnModuleInit {
       return;
     }
 
-    const appUrl = params.portalUrl || process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = params.portalUrl || process.env.APP_URL || 'https://warranty-evidence.omnisuiteai.com';
     const caseUrl = `${appUrl}/cases/${params.caseId}`;
 
     const subject = `[Booran Warranty] Ticket Approved & Submitted: RO #${params.roNumber} (OEM Claim #${params.claimNumber})`;
@@ -841,7 +841,7 @@ export class NotificationsService implements OnModuleInit {
       return;
     }
 
-    const appUrl = params.portalUrl || process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = params.portalUrl || process.env.APP_URL || 'https://warranty-evidence.omnisuiteai.com';
     const caseUrl = `${appUrl}/cases/${params.caseId}`;
 
     const subject = `[Booran Warranty - Action Required] Ticket Flagged / Evidence Rejected: RO #${params.roNumber}`;
@@ -943,7 +943,7 @@ export class NotificationsService implements OnModuleInit {
       return;
     }
 
-    const appUrl = params.portalUrl || process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = params.portalUrl || process.env.APP_URL || 'https://warranty-evidence.omnisuiteai.com';
     const caseUrl = `${appUrl}/cases/${params.caseId}`;
 
     const subject = `[Booran Warranty] Flag Issue Corrected: RO #${params.roNumber} - ${params.evidenceName || params.evidenceRuleKey}`;

@@ -166,7 +166,8 @@ export class VoiceToTechService {
           dto.audioUrl.includes('localhost') ||
           dto.audioUrl.includes('127.0.0.1') ||
           dto.audioUrl.includes('10.0.2.2') ||
-          dto.audioUrl.includes('192.168.')
+          dto.audioUrl.includes('192.168.') ||
+          dto.audioUrl.includes('warranty-evidence.omnisuiteai.com')
         ) {
           const uploadsIndex = dto.audioUrl.indexOf('/uploads/');
           if (uploadsIndex !== -1) {
