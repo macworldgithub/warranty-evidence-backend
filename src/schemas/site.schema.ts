@@ -25,6 +25,18 @@ export class Site {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({ required: false, type: Number })
+  latitude?: number;
+
+  @Prop({ required: false, type: Number })
+  longitude?: number;
+
+  @Prop({ required: false, type: Number, default: 200 })
+  geofenceRadiusMeters?: number;
+
+  @Prop({ default: true })
+  geofenceEnabled?: boolean;
 }
 
 export const SiteSchema = SchemaFactory.createForClass(Site);

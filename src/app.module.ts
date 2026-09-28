@@ -1,3 +1,8 @@
+import * as dns from 'dns';
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (_e) {}
+
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -15,6 +20,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { SubmissionPackModule } from './modules/submission-pack/submission-pack.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { LoanAgreementsModule } from './modules/loan-agreements/loan-agreements.module';
+import { GeofenceModule } from './modules/geofence/geofence.module';
 
 @Module({
   imports: [
@@ -54,6 +60,7 @@ import { LoanAgreementsModule } from './modules/loan-agreements/loan-agreements.
     DashboardModule,
     StorageModule,
     LoanAgreementsModule,
+    GeofenceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

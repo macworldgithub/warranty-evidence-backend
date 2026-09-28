@@ -44,6 +44,67 @@ export class User {
     default: [],
   })
   fcmTokens: { token: string; platform: 'android' | 'ios' | 'web'; updatedAt: Date }[];
+
+  @Prop({ type: String, enum: ['ON_SITE', 'OFF_SITE'], default: 'ON_SITE' })
+  presenceStatus?: 'ON_SITE' | 'OFF_SITE';
+
+  @Prop({ type: Number })
+  presenceLatitude?: number;
+
+  @Prop({ type: Number })
+  presenceLongitude?: number;
+
+  @Prop({ type: Number })
+  presenceDistanceMeters?: number;
+
+  @Prop({ type: Number })
+  presenceSpeedKmh?: number;
+
+  @Prop({ type: Number })
+  presenceAccuracy?: number;
+
+  @Prop({ type: String, enum: ['INSPECTION', 'ROAD_TEST', 'WORKSHOP', 'IDLE'], default: 'WORKSHOP' })
+  presenceActivity?: string;
+
+  @Prop({ type: String })
+  presenceSiteId?: string;
+
+  @Prop({ type: String })
+  presenceSiteName?: string;
+
+  @Prop({ type: String })
+  presenceRoNumber?: string;
+
+  @Prop({ type: Date })
+  presenceLastPingAt?: Date;
+
+  @Prop({
+    type: [
+      {
+        eventType: { type: String },
+        siteId: { type: String },
+        siteName: { type: String },
+        latitude: { type: Number },
+        longitude: { type: Number },
+        distanceMeters: { type: Number },
+        activeRoNumber: { type: String },
+        notes: { type: String },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
+    default: [],
+  })
+  geofenceEvents?: {
+    eventType: string;
+    siteId: string;
+    siteName?: string;
+    latitude: number;
+    longitude: number;
+    distanceMeters?: number;
+    activeRoNumber?: string;
+    notes?: string;
+    timestamp: Date;
+  }[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

@@ -23,6 +23,18 @@ export class SiteDto {
 
   @ApiProperty({ example: true })
   isActive: boolean;
+
+  @ApiPropertyOptional({ example: -38.0992 })
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 145.2813 })
+  longitude?: number;
+
+  @ApiPropertyOptional({ example: 200 })
+  geofenceRadiusMeters?: number;
+
+  @ApiPropertyOptional({ example: true })
+  geofenceEnabled?: boolean;
 }
 
 export class CreateSiteDto {
@@ -42,6 +54,23 @@ export class CreateSiteDto {
   @IsOptional()
   @IsArray()
   authorizedBrandIds?: string[];
+
+  @ApiPropertyOptional({ example: -38.0315 })
+  @IsOptional()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 145.3444 })
+  @IsOptional()
+  longitude?: number;
+
+  @ApiPropertyOptional({ example: 200 })
+  @IsOptional()
+  geofenceRadiusMeters?: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  geofenceEnabled?: boolean;
 }
 
 export class UpdateSiteDto {
@@ -64,6 +93,23 @@ export class UpdateSiteDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ example: -38.0315 })
+  @IsOptional()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 145.3444 })
+  @IsOptional()
+  longitude?: number;
+
+  @ApiPropertyOptional({ example: 200 })
+  @IsOptional()
+  geofenceRadiusMeters?: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  geofenceEnabled?: boolean;
 }
 
 export class UpdateSiteBrandsDto {
@@ -100,6 +146,10 @@ export class SitesService implements OnModuleInit {
         roPrefix: 'CR-',
         authorizedBrandIds: ['brand_byd'],
         isActive: true,
+        latitude: -38.0992,
+        longitude: 145.2813,
+        geofenceRadiusMeters: 200,
+        geofenceEnabled: true,
       },
       {
         id: 'site_dandenong_multi',
@@ -109,6 +159,10 @@ export class SitesService implements OnModuleInit {
         roPrefix: 'DAN-',
         authorizedBrandIds: ['brand_hyundai', 'brand_kia', 'brand_mitsubishi', 'brand_nissan'],
         isActive: true,
+        latitude: -37.9881,
+        longitude: 145.2152,
+        geofenceRadiusMeters: 200,
+        geofenceEnabled: true,
       },
       {
         id: 'site_cheltenham_mg',
@@ -118,6 +172,10 @@ export class SitesService implements OnModuleInit {
         roPrefix: 'CHEL-',
         authorizedBrandIds: ['brand_mg', 'brand_chery'],
         isActive: true,
+        latitude: -37.9667,
+        longitude: 145.0560,
+        geofenceRadiusMeters: 200,
+        geofenceEnabled: true,
       },
       {
         id: 'site_berwick_toyota_ford',
@@ -127,6 +185,10 @@ export class SitesService implements OnModuleInit {
         roPrefix: 'BER-',
         authorizedBrandIds: ['brand_toyota', 'brand_ford', 'brand_isuzu'],
         isActive: true,
+        latitude: -38.0315,
+        longitude: 145.3444,
+        geofenceRadiusMeters: 250,
+        geofenceEnabled: true,
       },
     ];
 
@@ -165,6 +227,10 @@ export class SitesService implements OnModuleInit {
       roPrefix: dto.roPrefix,
       authorizedBrandIds: dto.authorizedBrandIds ?? [],
       isActive: true,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      geofenceRadiusMeters: dto.geofenceRadiusMeters ?? 200,
+      geofenceEnabled: dto.geofenceEnabled ?? true,
     });
     return (await newSite.save()).toObject();
   }
