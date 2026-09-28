@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsOptional, ValidateNested, IsEmail, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, ValidateNested, IsEmail, IsBoolean, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CustomerDetailsDto {
@@ -164,6 +164,7 @@ export class CreateLoanAgreementDto {
 
   @ApiProperty({ enum: ['SERVICE_LOANER', 'TEST_DRIVE', 'COURTESY_LOAN', 'DEMO'], default: 'SERVICE_LOANER' })
   @IsString()
+  @IsIn(['SERVICE_LOANER', 'TEST_DRIVE', 'COURTESY_LOAN', 'DEMO'])
   purpose: string;
 
   @ApiProperty({ type: CustomerDetailsDto })
@@ -200,6 +201,16 @@ export class CreateLoanAgreementDto {
   @IsOptional()
   @IsNumber()
   basicInsuranceExcess?: number;
+
+  @ApiPropertyOptional({ example: 500 })
+  @IsOptional()
+  @IsNumber()
+  securityDepositHeld?: number;
+
+  @ApiPropertyOptional({ example: 'CREDIT_CARD_PREAUTH' })
+  @IsOptional()
+  @IsString()
+  depositPaymentMethod?: string;
 
   @ApiProperty({ type: OutboundConditionDto })
   @ValidateNested()

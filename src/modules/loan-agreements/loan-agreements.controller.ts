@@ -8,6 +8,7 @@ import {
   Body,
   Param,
   Query,
+  Headers,
   Res,
   UseGuards,
   Req,
@@ -29,8 +30,16 @@ export class LoanAgreementsController {
 
   @Get('kpis')
   @ApiOperation({ summary: 'Get operational KPIs: Available, Out now, Due soon, Overdue' })
-  async getKpis(@Query('siteId') siteId?: string) {
-    return this.service.getKpis(siteId);
+  async getKpis(
+    @Query('siteId') siteId?: string,
+    @Headers('x-user-role') xUserRole?: string,
+    @Headers('x-user-site-id') xUserSiteId?: string,
+  ) {
+    let effectiveSiteId = siteId;
+    if (xUserRole?.toUpperCase() === 'TECHNICIAN' && xUserSiteId) {
+      effectiveSiteId = xUserSiteId;
+    }
+    return this.service.getKpis(effectiveSiteId);
   }
 
   @Get()
@@ -38,8 +47,14 @@ export class LoanAgreementsController {
   async findAll(
     @Query('siteId') siteId?: string,
     @Query('status') status?: string,
+    @Headers('x-user-role') xUserRole?: string,
+    @Headers('x-user-site-id') xUserSiteId?: string,
   ) {
-    return this.service.findAll(siteId, status);
+    let effectiveSiteId = siteId;
+    if (xUserRole?.toUpperCase() === 'TECHNICIAN' && xUserSiteId) {
+      effectiveSiteId = xUserSiteId;
+    }
+    return this.service.findAll(effectiveSiteId, status);
   }
 
   @Get(':id')

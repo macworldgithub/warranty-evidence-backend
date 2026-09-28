@@ -33,56 +33,61 @@ export class LoanAgreementPdfService {
         const right = left + pageWidth;
 
         // ── 1. HEADER BANNER ──────────────────────────────────────────
-        doc.roundedRect(left, 32, pageWidth, 56, 6).fill('#E11F26'); // Booran Red
+        const bannerH = 62;
+        doc.roundedRect(left, 28, pageWidth, bannerH, 6).fill('#E11F26'); // Booran Red
 
-        doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold')
-          .text('BOORAN MOTOR GROUP', left + 16, 42);
-
-        doc.fillColor('#FFFFFF').fontSize(9).font('Helvetica-Bold')
-          .text('CUSTOMER TEST DRIVE & LOAN VEHICLE AGREEMENT', left + 16, 60);
+        doc.fillColor('#FFFFFF').fontSize(13).font('Helvetica-Bold')
+          .text('BOORAN MOTOR GROUP', left + 14, 36);
 
         doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold')
-          .text(agreementData.agreementNumber || 'BMG-LOAN-2026', left, 42, { width: pageWidth - 16, align: 'right' });
+          .text(agreementData.agreementNumber || 'BMG-LOAN-2026', left, 36, { width: pageWidth - 14, align: 'right' });
+
+        doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold')
+          .text('CUSTOMER TEST DRIVE & LOAN VEHICLE AGREEMENT', left + 14, 52);
+
+        const statusText = (agreementData.status === 'RETURNED' ? 'RETURNED & RECONCILED' : 'SIGNED & ACTIVE');
+        doc.fillColor('#FEE2E2').fontSize(8).font('Helvetica-Bold')
+          .text(`STATUS: ${statusText}`, left, 53, { width: pageWidth - 14, align: 'right' });
 
         const siteText = (agreementData.siteName || 'Booran BYD Cranbourne').toUpperCase();
-        doc.fillColor('#FEE2E2').fontSize(8).font('Helvetica')
-          .text(`ROOFTOP: ${siteText}  |  STATUS: SIGNED & ACTIVE`, left, 60, { width: pageWidth - 16, align: 'right' });
+        doc.fillColor('#FECACA').fontSize(7.5).font('Helvetica')
+          .text(`ROOFTOP: ${siteText}  |  GOVERNING LAW: VICTORIA, AUSTRALIA`, left + 14, 68, { width: pageWidth - 28 });
 
-        let y = 98;
+        let y = 100;
 
         // ── 2. SUMMARY GRID: BORROWER & VEHICLE ────────────────────────
-        doc.roundedRect(left, y, pageWidth, 110, 5).strokeColor('#E2E8F0').lineWidth(1).stroke();
+        doc.roundedRect(left, y, pageWidth, 108, 5).strokeColor('#E2E8F0').lineWidth(1).stroke();
 
         // Customer Column (Left Half)
-        doc.fillColor('#E11F26').fontSize(9).font('Helvetica-Bold').text('BORROWER (CUSTOMER)', left + 12, y + 10);
-        doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold').text(agreementData.customer?.name || 'Customer Name', left + 12, y + 24);
+        doc.fillColor('#E11F26').fontSize(8.5).font('Helvetica-Bold').text('BORROWER (CUSTOMER)', left + 12, y + 9);
+        doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold').text(agreementData.customer?.name || 'Customer Name', left + 12, y + 22);
         
-        doc.fillColor('#64748B').fontSize(8).font('Helvetica')
-          .text(`DOB: ${agreementData.customer?.dob || 'N/A'}  ·  Mobile: ${agreementData.customer?.mobile || 'N/A'}`, left + 12, y + 38)
-          .text(`Email: ${agreementData.customer?.email || 'N/A'}`, left + 12, y + 50)
-          .text(`Address: ${agreementData.customer?.residentialAddress || 'N/A'}`, left + 12, y + 62)
-          .text(`Licence #: ${agreementData.customer?.licenceNumber || 'N/A'} (${agreementData.customer?.licenceState || 'VIC'})  ·  Exp: ${agreementData.customer?.licenceExpiry || 'N/A'}`, left + 12, y + 74);
+        doc.fillColor('#64748B').fontSize(7.5).font('Helvetica')
+          .text(`DOB: ${agreementData.customer?.dob || 'N/A'}  ·  Mobile: ${agreementData.customer?.mobile || 'N/A'}`, left + 12, y + 36)
+          .text(`Email: ${agreementData.customer?.email || 'N/A'}`, left + 12, y + 48)
+          .text(`Address: ${agreementData.customer?.residentialAddress || 'N/A'}`, left + 12, y + 60)
+          .text(`Licence #: ${agreementData.customer?.licenceNumber || 'N/A'} (${agreementData.customer?.licenceState || 'VIC'})  ·  Exp: ${agreementData.customer?.licenceExpiry || 'N/A'}`, left + 12, y + 72);
 
-        doc.fillColor('#059669').fontSize(8).font('Helvetica-Bold')
+        doc.fillColor('#059669').fontSize(7.5).font('Helvetica-Bold')
           .text(`✓ LICENCE SIGHTED BY DEALERSHIP STAFF`, left + 12, y + 88);
 
         // Vehicle Column (Right Half)
         const midX = left + (pageWidth / 2) + 8;
-        doc.fillColor('#E11F26').fontSize(9).font('Helvetica-Bold').text('LOAN VEHICLE DETAILS', midX, y + 10);
+        doc.fillColor('#E11F26').fontSize(8.5).font('Helvetica-Bold').text('LOAN VEHICLE DETAILS', midX, y + 9);
         const vehTitle = `${agreementData.vehicle?.year || 2024} ${agreementData.vehicle?.make || 'Toyota'} ${agreementData.vehicle?.model || 'RAV4'}`;
-        doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold').text(vehTitle, midX, y + 24);
+        doc.fillColor('#0F172A').fontSize(10).font('Helvetica-Bold').text(vehTitle, midX, y + 22);
 
-        doc.fillColor('#64748B').fontSize(8).font('Helvetica')
-          .text(`Rego: ${agreementData.vehicle?.rego || 'N/A'}  ·  Colour: ${agreementData.vehicle?.colour || 'White'}`, midX, y + 38)
-          .text(`VIN: ${agreementData.vehicle?.vin || 'N/A'}`, midX, y + 50)
-          .text(`Outbound Odo: ${agreementData.outbound?.odometerOut?.toLocaleString() || '12,000'} km  ·  Fuel: ${agreementData.outbound?.fuelLevelOutPercent || 100}%`, midX, y + 62)
-          .text(`Due Back: ${agreementData.dueBackDateTime ? new Date(agreementData.dueBackDateTime).toLocaleString() : '5:00 PM'}`, midX, y + 74)
-          .text(`Daily Cap: ${agreementData.dailyKmCap || 50} km/day  ·  Excess Rate: $${agreementData.excessKmRate || '0.50'}/km`, midX, y + 86);
+        doc.fillColor('#64748B').fontSize(7.5).font('Helvetica')
+          .text(`Rego: ${agreementData.vehicle?.rego || 'N/A'}  ·  Colour: ${agreementData.vehicle?.colour || 'White'}`, midX, y + 36)
+          .text(`VIN: ${agreementData.vehicle?.vin || 'N/A'}`, midX, y + 48)
+          .text(`Outbound Odo: ${agreementData.outbound?.odometerOut?.toLocaleString() || '12,000'} km  ·  Fuel: ${agreementData.outbound?.fuelLevelOutPercent || 100}%`, midX, y + 60)
+          .text(`Due Back: ${agreementData.dueBackDateTime ? new Date(agreementData.dueBackDateTime).toLocaleString() : '5:00 PM'}`, midX, y + 72)
+          .text(`Daily Cap: ${agreementData.dailyKmCap || 50} km/day  ·  Excess Rate: $${agreementData.excessKmRate || '0.50'}/km`, midX, y + 84);
 
-        y += 120;
+        y += 118;
 
         // ── 3. OPERATIVE TERMS (18 CLAUSES AS SUPPLIED) ────────────────
-        doc.fillColor('#0F172A').fontSize(9).font('Helvetica-Bold').text('OPERATIVE TERMS & CONDITIONS (VICTORIA)', left, y);
+        doc.fillColor('#0F172A').fontSize(8.5).font('Helvetica-Bold').text('OPERATIVE TERMS & CONDITIONS (VICTORIA)', left, y);
         y += 12;
 
         const clauses = [
@@ -101,18 +106,19 @@ export class LoanAgreementPdfService {
           '13. Vehicles must remain on sealed roads at all times.',
           '14. Strictly no smoking, vaping, drinking or eating in or on the vehicle.',
           '15. Please refrain from transporting pets or animals in or on the vehicle.',
-          '16. Return by 5:00pm on the agreed day. A daily usage limit of 50km applies. Excess kilometres travelled are charged at 50c per kilometre.',
+          '16. Return by 5:00pm on agreed day with equivalent fuel level (refuelling deficit charged at $1.50/%). Daily limit of 50km applies; excess kilometres charged at 50c per kilometre.',
           '17. Any tolls, road usage charges, fines or infringements are the sole responsibility of the Borrower.',
           '18. Personal information is collected under our Privacy Policy to administer this vehicle loan, insurance, and statutory compliance.',
         ];
 
-        doc.fontSize(6.5).font('Helvetica').fillColor('#334155');
+        doc.fontSize(6.2).font('Helvetica').fillColor('#334155');
         for (const cl of clauses) {
+          const clauseH = doc.heightOfString(cl, { width: pageWidth, lineGap: 1 });
           doc.text(cl, left, y, { width: pageWidth, lineGap: 1 });
-          y += 11;
+          y += clauseH + 2;
         }
 
-        y += 6;
+        y += 4;
 
         // ── 4. MANDATORY E-SIGN ACKNOWLEDGEMENTS ──────────────────────
         doc.roundedRect(left, y, pageWidth, 40, 4).fill('#F8FAFC');

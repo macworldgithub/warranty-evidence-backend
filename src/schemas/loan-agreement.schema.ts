@@ -152,6 +152,30 @@ export class InboundInspectionSubdocument {
 
   @Prop({ default: 0 })
   applicableExcessAmount?: number;
+
+  @Prop({ default: 0 })
+  fuelShortagePercent?: number;
+
+  @Prop({ default: 0 })
+  fuelChargeAmount?: number;
+
+  @Prop({ default: 0 })
+  damageChargeAmount?: number;
+
+  @Prop({ default: 0 })
+  cleaningFeeAmount?: number;
+
+  @Prop({ default: 0 })
+  totalChargesDue?: number;
+
+  @Prop({ default: 500 })
+  securityDepositHeld?: number;
+
+  @Prop({ default: 0 })
+  depositRefundAmount?: number;
+
+  @Prop({ default: 0 })
+  netAmountDue?: number;
 }
 export const InboundInspectionSchema = SchemaFactory.createForClass(InboundInspectionSubdocument);
 
@@ -232,6 +256,12 @@ export class LoanAgreement {
 
   @Prop({ default: 2500 })
   basicInsuranceExcess: number; // default $2,500
+
+  @Prop({ default: 500 })
+  securityDepositHeld?: number; // default $500 pre-auth deposit
+
+  @Prop({ default: 'CREDIT_CARD_PREAUTH' })
+  depositPaymentMethod?: string;
 
   @Prop({ type: OutboundInspectionSchema, required: true })
   outbound: OutboundInspectionSubdocument;

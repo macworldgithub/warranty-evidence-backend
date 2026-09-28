@@ -25,7 +25,7 @@ async function bootstrap() {
 
   // Enable CORS for frontend and mobile PWA
   app.enableCors({
-    origin: '*',
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

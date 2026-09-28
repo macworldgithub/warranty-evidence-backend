@@ -404,9 +404,40 @@ export class LoanAgreementsService implements OnModuleInit {
     const excessRate = agreement.excessKmRate || 0.50;
     const excessChargeAmount = Number((excessKm * excessRate).toFixed(2));
 
+    const fuelOut = agreement.outbound?.fuelLevelOutPercent ?? 100;
+    const fuelIn = dto.fuelLevelInPercent !== undefined ? dto.fuelLevelInPercent : 100;
+    const fuelShortagePercent = Math.max(0, fuelOut - fuelIn);
+    const defaultFuelRate = 1.50; // $1.50 per 1% deficit (standard dealership refueling tariff)
+    const fuelChargeAmount = dto.fuelChargeAmount !== undefined
+      ? Number(dto.fuelChargeAmount)
+      : Number((fuelShortagePercent * defaultFuelRate).toFixed(2));
+
+    const damageChargeAmount = Number(dto.damageChargeAmount || 0);
+    const hasIncident = dto.hasDamageIncident || false;
+    const applicableExcessAmount = hasIncident ? Number(dto.applicableExcessAmount || 2500) : Number(dto.applicableExcessAmount || 0);
+    const cleaningFeeAmount = Number(dto.cleaningFeeAmount || 0);
+    const totalChargesDue = dto.totalChargesDue !== undefined
+      ? Number(dto.totalChargesDue)
+      : Number((excessChargeAmount + fuelChargeAmount + damageChargeAmount + applicableExcessAmount + cleaningFeeAmount).toFixed(2));
+
+    const depositHeld = dto.securityDepositHeld !== undefined
+      ? Number(dto.securityDepositHeld)
+      : Number((agreement as any).securityDepositHeld ?? 500);
+
+    const netAmountDue = Math.max(0, Number((totalChargesDue - depositHeld).toFixed(2)));
+    const depositRefundAmount = Math.max(0, Number((depositHeld - totalChargesDue).toFixed(2)));
+
     agreement.inbound = {
       odometerIn: odoIn,
-      fuelLevelInPercent: dto.fuelLevelInPercent,
+      fuelLevelInPercent: fuelIn,
+      fuelShortagePercent,
+      fuelChargeAmount,
+      damageChargeAmount,
+      cleaningFeeAmount,
+      totalChargesDue,
+      securityDepositHeld: depositHeld,
+      depositRefundAmount,
+      netAmountDue,
       returnDamageNotes: dto.returnDamageNotes || 'Return check complete.',
       photos: dto.photos || {},
       returnedAt: new Date().toISOString(),
@@ -416,9 +447,9 @@ export class LoanAgreementsService implements OnModuleInit {
       allowableKm,
       excessKm,
       excessKmChargeAmount: excessChargeAmount,
-      hasDamageIncident: dto.hasDamageIncident || false,
+      hasDamageIncident: hasIncident,
       applicableExcessBand: dto.applicableExcessBand,
-      applicableExcessAmount: dto.applicableExcessAmount || 0,
+      applicableExcessAmount,
     };
     agreement.status = 'RETURNED';
 

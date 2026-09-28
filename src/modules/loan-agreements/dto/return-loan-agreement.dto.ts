@@ -40,6 +40,46 @@ export class ReturnLoanAgreementDto {
   @IsNumber()
   applicableExcessAmount?: number;
 
+  @ApiPropertyOptional({ example: 30 })
+  @IsOptional()
+  @IsNumber()
+  fuelShortagePercent?: number;
+
+  @ApiPropertyOptional({ example: 45.00 })
+  @IsOptional()
+  @IsNumber()
+  fuelChargeAmount?: number;
+
+  @ApiPropertyOptional({ example: 250.00 })
+  @IsOptional()
+  @IsNumber()
+  damageChargeAmount?: number;
+
+  @ApiPropertyOptional({ example: 0.00 })
+  @IsOptional()
+  @IsNumber()
+  cleaningFeeAmount?: number;
+
+  @ApiPropertyOptional({ example: 2795.00 })
+  @IsOptional()
+  @IsNumber()
+  totalChargesDue?: number;
+
+  @ApiPropertyOptional({ example: 500.00 })
+  @IsOptional()
+  @IsNumber()
+  securityDepositHeld?: number;
+
+  @ApiPropertyOptional({ example: 0.00 })
+  @IsOptional()
+  @IsNumber()
+  depositRefundAmount?: number;
+
+  @ApiPropertyOptional({ example: 2295.00 })
+  @IsOptional()
+  @IsNumber()
+  netAmountDue?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
