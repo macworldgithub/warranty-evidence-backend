@@ -185,12 +185,17 @@ export class GeofenceService {
   }
 
   async getSiteRoster(siteId: string) {
+    const isAll = !siteId || siteId.toLowerCase() === 'all' || siteId === 'all_sites';
+    const query: any = {
+      role: 'TECHNICIAN',
+      isActive: true,
+    };
+    if (!isAll) {
+      query.$or = [{ presenceSiteId: siteId }, { defaultSiteId: siteId }, { authorizedSiteIds: siteId }];
+    }
+
     const technicians = await this.userModel
-      .find({
-        role: 'TECHNICIAN',
-        isActive: true,
-        $or: [{ presenceSiteId: siteId }, { defaultSiteId: siteId }, { authorizedSiteIds: siteId }],
-      })
+      .find(query)
       .select('-passwordHash')
       .lean();
 
@@ -209,8 +214,10 @@ export class GeofenceService {
     }));
 
     roster.sort((a, b) => {
-      if (a.status === b.status) return 0;
-      return a.status === 'ON_SITE' ? -1 : 1;
+      if (a.status !== b.status) {
+        return a.status === 'OFF_SITE' ? -1 : 1;
+      }
+      return new Date(b.lastPingAt).getTime() - new Date(a.lastPingAt).getTime();
     });
 
     const onSiteCount = roster.filter((p) => p.status === 'ON_SITE').length;

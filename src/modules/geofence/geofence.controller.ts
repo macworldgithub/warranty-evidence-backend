@@ -19,14 +19,14 @@ export class GeofenceController {
     }
   }
 
-  @Get('site/:siteId/roster')
+  @Get(['roster/:siteId', 'site/:siteId/roster'])
   @ApiOperation({ summary: 'Get live staff presence roster for a specific dealership site' })
   @ApiResponse({ status: 200, description: 'List of staff members and their ON_SITE/OFF_SITE status' })
   async getSiteRoster(@Param('siteId') siteId: string) {
     return this.geofenceService.getSiteRoster(siteId);
   }
 
-  @Get('site/:siteId/events')
+  @Get(['events/:siteId', 'site/:siteId/events'])
   @ApiOperation({ summary: 'Get geofence perimeter transition event history for a site' })
   @ApiResponse({ status: 200, description: 'Recent geofence crossing events' })
   async getSiteEvents(
