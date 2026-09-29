@@ -5,3 +5,4 @@ export * from './warranty-case.schema';
 export * from './user.schema';
 export * from './otp.schema';
 export * from './loan-agreement.schema';
+export * from './test-drive-log.schema';

@@ -21,6 +21,7 @@ import { SubmissionPackModule } from './modules/submission-pack/submission-pack.
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { LoanAgreementsModule } from './modules/loan-agreements/loan-agreements.module';
 import { GeofenceModule } from './modules/geofence/geofence.module';
+import { TestDrivesModule } from './modules/test-drives/test-drives.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { GeofenceModule } from './modules/geofence/geofence.module';
     StorageModule,
     LoanAgreementsModule,
     GeofenceModule,
+    TestDrivesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
