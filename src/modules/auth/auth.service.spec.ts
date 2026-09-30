@@ -28,6 +28,22 @@ describe('AuthService session and clerk access rules', () => {
     return new AuthService(userModel as never, {} as never, {} as never, {} as never);
   }
 
+  function createUserManagementService(): AuthService {
+    const UserModel = jest.fn().mockImplementation((data) => ({
+      ...data,
+      save: jest.fn().mockResolvedValue({
+        toObject: () => data,
+      }),
+    }));
+    Object.assign(UserModel, {
+      findOne: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+    });
+    const siteModel = {
+      countDocuments: jest.fn().mockResolvedValue(1),
+    };
+    return new AuthService(UserModel as never, {} as never, siteModel as never, {} as never);
+  }
+
   it('issues a signed session and resolves its database user', async () => {
     const service = createService();
     const login = await service.login({
@@ -69,5 +85,25 @@ describe('AuthService session and clerk access rules', () => {
     };
 
     await expect(service.createUser(dto)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('allows an admin to create a clerk assigned to one or more sites', async () => {
+    const service = createUserManagementService();
+    const dto: CreateUserDto = {
+      name: 'Warranty Clerk',
+      email: 'clerk@booran.com.au',
+      password: 'password',
+      role: UserRole.CLERK,
+      siteId: 'site_a',
+      authorizedSiteIds: ['site_a'],
+    };
+
+    await expect(service.createUser(dto)).resolves.toMatchObject({
+      name: 'Warranty Clerk',
+      email: 'clerk@booran.com.au',
+      role: UserRole.CLERK,
+      defaultSiteId: 'site_a',
+      authorizedSiteIds: ['site_a'],
+    });
   });
 });
