@@ -33,6 +33,8 @@ $ npm install
 
 ## Compile and run the project
 
+Set `AUTH_TOKEN_SECRET` to a long, random value in every deployed environment. It is used to sign portal and technician sessions and must remain the same across restarts and server instances.
+
 ```bash
 # development
 $ npm run start

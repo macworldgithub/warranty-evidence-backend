@@ -94,6 +94,7 @@ export interface UpdateTripDto {
 
 export interface TestDriveQueryFilters {
   siteId?: string;
+  siteIds?: string[];
   ro?: string;
   registration?: string;
   technicianId?: string;
@@ -231,7 +232,9 @@ export class TestDrivesService {
   async findAll(filters: TestDriveQueryFilters) {
     const query: any = {};
 
-    if (filters.siteId && filters.siteId.toLowerCase() !== 'all' && filters.siteId !== 'all_sites') {
+    if (filters.siteIds) {
+      query.siteId = { $in: filters.siteIds };
+    } else if (filters.siteId && filters.siteId.toLowerCase() !== 'all' && filters.siteId !== 'all_sites') {
       query.siteId = filters.siteId;
     }
 

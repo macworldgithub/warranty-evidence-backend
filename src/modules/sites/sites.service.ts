@@ -237,7 +237,7 @@ export class SitesService implements OnModuleInit {
 
   async update(id: string, dto: UpdateSiteDto): Promise<Site> {
     const updated = await this.siteModel
-      .findOneAndUpdate({ id }, { $set: dto }, { new: true })
+      .findOneAndUpdate({ id }, { $set: dto }, { returnDocument: 'after' })
       .lean();
     if (!updated) throw new NotFoundException(`Site with id ${id} not found`);
     return updated;
@@ -248,7 +248,7 @@ export class SitesService implements OnModuleInit {
       .findOneAndUpdate(
         { id },
         { $set: { authorizedBrandIds: dto.authorizedBrandIds } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .lean();
     if (!updated) throw new NotFoundException(`Site with id ${id} not found`);

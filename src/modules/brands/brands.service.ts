@@ -190,7 +190,7 @@ export class BrandsService implements OnModuleInit {
 
   async update(id: string, dto: UpdateBrandDto): Promise<Brand> {
     const updated = await this.brandModel
-      .findOneAndUpdate({ id }, { $set: dto }, { new: true })
+      .findOneAndUpdate({ id }, { $set: dto }, { returnDocument: 'after' })
       .lean();
     if (!updated) throw new NotFoundException(`Brand with id ${id} not found`);
     return updated;

@@ -4,9 +4,12 @@ import { SitesController } from './sites.controller';
 import { SitesService } from './sites.service';
 import { Site, SiteSchema } from '../../schemas/site.schema';
 
+import { AuthModule } from '../auth/auth.module';
+
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Site.name, schema: SiteSchema }]),
+    AuthModule,
   ],
   controllers: [SitesController],
   providers: [SitesService],

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Headers, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   SitesService,
@@ -8,11 +8,25 @@ import {
   UpdateSiteBrandsDto,
 } from './sites.service';
 import { Site } from '../../schemas/site.schema';
+import { AuthService } from '../auth/auth.service';
+import { UserRole } from '../../common/enums';
 
 @ApiTags('Sites & Rooftops')
 @Controller('sites')
 export class SitesController {
-  constructor(private readonly sitesService: SitesService) {}
+  constructor(
+    private readonly sitesService: SitesService,
+    private readonly authService: AuthService,
+  ) {}
+
+  private async assertAdmin(authorization?: string) {
+    if (authorization) {
+      const user = await this.authService.resolveUserFromAuthorization(authorization);
+      if (user.role !== UserRole.ADMIN) {
+        throw new ForbiddenException('Only Administrators are authorized to configure dealership sites and geofence radius.');
+      }
+    }
+  }
 
   @Get()
   @ApiOperation({ summary: 'List all Booran dealership sites / rooftops' })
@@ -38,14 +52,23 @@ export class SitesController {
   @Post()
   @ApiOperation({ summary: 'Create a new dealership rooftop (Admin only)' })
   @ApiResponse({ status: 201, type: SiteDto })
-  async create(@Body() dto: CreateSiteDto): Promise<Site> {
+  async create(
+    @Body() dto: CreateSiteDto,
+    @Headers('authorization') authorization?: string,
+  ): Promise<Site> {
+    await this.assertAdmin(authorization);
     return this.sitesService.create(dto);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update site details — name, location, RO prefix, active status (Admin only)' })
+  @ApiOperation({ summary: 'Update site details — name, location, RO prefix, active status, geofence radius (Admin only)' })
   @ApiResponse({ status: 200, type: SiteDto })
-  async update(@Param('id') id: string, @Body() dto: UpdateSiteDto): Promise<Site> {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateSiteDto,
+    @Headers('authorization') authorization?: string,
+  ): Promise<Site> {
+    await this.assertAdmin(authorization);
     return this.sitesService.update(id, dto);
   }
 
@@ -55,14 +78,20 @@ export class SitesController {
   async updateBrands(
     @Param('id') id: string,
     @Body() dto: UpdateSiteBrandsDto,
+    @Headers('authorization') authorization?: string,
   ): Promise<Site> {
+    await this.assertAdmin(authorization);
     return this.sitesService.updateBrands(id, dto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Deactivate a dealership site (Admin only — soft delete)' })
   @ApiResponse({ status: 200, schema: { example: { message: 'Site deactivated' } } })
-  async deactivate(@Param('id') id: string): Promise<{ message: string }> {
+  async deactivate(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ): Promise<{ message: string }> {
+    await this.assertAdmin(authorization);
     return this.sitesService.deactivate(id);
   }
 }

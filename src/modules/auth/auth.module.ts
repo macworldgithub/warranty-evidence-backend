@@ -4,6 +4,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { User, UserSchema } from '../../schemas/user.schema';
 import { Otp, OtpSchema } from '../../schemas/otp.schema';
+import { Site, SiteSchema } from '../../schemas/site.schema';
 
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -12,6 +13,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Otp.name, schema: OtpSchema },
+      { name: Site.name, schema: SiteSchema },
     ]),
     NotificationsModule,
   ],

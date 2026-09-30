@@ -5,6 +5,7 @@ import { DashboardService } from './dashboard.service';
 import { WarrantyCase, WarrantyCaseSchema } from '../../schemas/warranty-case.schema';
 import { Site, SiteSchema } from '../../schemas/site.schema';
 import { Brand, BrandSchema } from '../../schemas/brand.schema';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { Brand, BrandSchema } from '../../schemas/brand.schema';
       { name: Site.name, schema: SiteSchema },
       { name: Brand.name, schema: BrandSchema },
     ]),
+    AuthModule,
   ],
   controllers: [DashboardController],
   providers: [DashboardService],

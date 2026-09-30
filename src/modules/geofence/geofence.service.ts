@@ -133,7 +133,7 @@ export class GeofenceService {
     let updatedUser = await this.userModel.findOneAndUpdate(
       { $or: [{ id: dto.technicianId }, { email: dto.technicianId }] },
       updateDoc,
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
 
     // If user not in database yet (e.g. mobile tech session), create stub user
@@ -184,13 +184,19 @@ export class GeofenceService {
     };
   }
 
-  async getSiteRoster(siteId: string) {
+  async getSiteRoster(siteId: string, allowedSiteIds?: string[]) {
     const isAll = !siteId || siteId.toLowerCase() === 'all' || siteId === 'all_sites';
     const query: any = {
       role: 'TECHNICIAN',
       isActive: true,
     };
-    if (!isAll) {
+    if (isAll && allowedSiteIds) {
+      query.$or = [
+        { presenceSiteId: { $in: allowedSiteIds } },
+        { defaultSiteId: { $in: allowedSiteIds } },
+        { authorizedSiteIds: { $in: allowedSiteIds } },
+      ];
+    } else if (!isAll) {
       query.$or = [{ presenceSiteId: siteId }, { defaultSiteId: siteId }, { authorizedSiteIds: siteId }];
     }
 
@@ -232,11 +238,15 @@ export class GeofenceService {
     };
   }
 
-  async getSiteEvents(siteId: string, limit = 50) {
+  async getSiteEvents(siteId?: string | string[], limit = 50) {
+    const isAll = !siteId || siteId === 'all' || siteId === 'all_sites';
+    const siteIds = Array.isArray(siteId) ? siteId : (!isAll && siteId ? [siteId] : undefined);
+    const query: any = {};
+    if (siteIds && siteIds.length > 0) {
+      query['geofenceEvents.siteId'] = { $in: siteIds };
+    }
     const usersWithEvents = await this.userModel
-      .find({
-        'geofenceEvents.siteId': siteId,
-      })
+      .find(query)
       .select('name id geofenceEvents')
       .lean();
 
@@ -244,7 +254,7 @@ export class GeofenceService {
     for (const u of usersWithEvents) {
       if (u.geofenceEvents) {
         for (const ev of u.geofenceEvents) {
-          if (ev.siteId === siteId) {
+          if (!siteIds || siteIds.includes(ev.siteId)) {
             allEvents.push({
               technicianId: u.id,
               technicianName: u.name,
@@ -259,9 +269,17 @@ export class GeofenceService {
     return allEvents.slice(0, limit);
   }
 
-  async getSummary() {
+  async getSummary(allowedSiteIds?: string[]) {
+    const query: any = { role: 'TECHNICIAN', isActive: true };
+    if (allowedSiteIds) {
+      query.$or = [
+        { presenceSiteId: { $in: allowedSiteIds } },
+        { defaultSiteId: { $in: allowedSiteIds } },
+        { authorizedSiteIds: { $in: allowedSiteIds } },
+      ];
+    }
     const technicians = await this.userModel
-      .find({ role: 'TECHNICIAN', isActive: true })
+      .find(query)
       .select('id name presenceStatus presenceActivity presenceSiteId presenceSiteName')
       .lean();
 

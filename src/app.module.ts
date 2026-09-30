@@ -22,6 +22,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { LoanAgreementsModule } from './modules/loan-agreements/loan-agreements.module';
 import { GeofenceModule } from './modules/geofence/geofence.module';
 import { TestDrivesModule } from './modules/test-drives/test-drives.module';
+import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { TestDrivesModule } from './modules/test-drives/test-drives.module';
     LoanAgreementsModule,
     GeofenceModule,
     TestDrivesModule,
+    LegalDocumentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

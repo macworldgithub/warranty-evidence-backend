@@ -9,6 +9,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { VoiceToTechModule } from '../voice-to-tech/voice-to-tech.module';
 import { WarrantyCase, WarrantyCaseSchema } from '../../schemas/warranty-case.schema';
 import { User, UserSchema } from '../../schemas/user.schema';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { User, UserSchema } from '../../schemas/user.schema';
     SitesModule,
     BrandsModule,
     NotificationsModule,
+    AuthModule,
     forwardRef(() => VoiceToTechModule),
   ],
   controllers: [WarrantyCasesController],

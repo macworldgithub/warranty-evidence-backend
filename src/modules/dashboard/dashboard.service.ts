@@ -84,13 +84,15 @@ export class DashboardService {
   /**
    * Computes live KPIs from actual MongoDB warranty case documents.
    */
-  async getKpis(): Promise<DashboardKpisDto> {
+  async getKpis(siteIds?: string[]): Promise<DashboardKpisDto> {
+    const caseQuery = siteIds?.length ? { siteId: { $in: siteIds } } : {};
+    const siteQuery = siteIds?.length ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
     const [totalCases, flaggedCases, sitesCount, brandsCount, submittedCases] = await Promise.all([
-      this.caseModel.countDocuments(),
-      this.caseModel.countDocuments({ status: 'Flagged' }),
-      this.siteModel.countDocuments({ isActive: true }),
+      this.caseModel.countDocuments(caseQuery),
+      this.caseModel.countDocuments({ ...caseQuery, status: 'Flagged' }),
+      this.siteModel.countDocuments(siteQuery),
       this.brandModel.countDocuments({ isActive: true }),
-      this.caseModel.find({ status: 'Submitted' }).select('createdAt updatedAt').lean(),
+      this.caseModel.find({ ...caseQuery, status: 'Submitted' }).select('createdAt updatedAt').lean(),
     ]);
 
     let sameDayCount = 0;
@@ -126,8 +128,10 @@ export class DashboardService {
   /**
    * Aggregates real flag reasons from all cases' flagHistory arrays in MongoDB.
    */
-  async getFlagReasonStats(): Promise<FlagReasonStatDto[]> {
-    const aggregation = await this.caseModel.aggregate([
+  async getFlagReasonStats(siteIds?: string[]): Promise<FlagReasonStatDto[]> {
+    const aggregationStages: any[] = [];
+    if (siteIds?.length) aggregationStages.push({ $match: { siteId: { $in: siteIds } } });
+    aggregationStages.push(
       { $unwind: '$flagHistory' },
       {
         $group: {
@@ -136,7 +140,8 @@ export class DashboardService {
         },
       },
       { $sort: { count: -1 } },
-    ]);
+    );
+    const aggregation = await this.caseModel.aggregate(aggregationStages);
 
     const totalFlagCount = aggregation.reduce((sum, item) => sum + item.count, 0);
 
@@ -167,8 +172,9 @@ export class DashboardService {
   /**
    * Computes per-site performance metrics from actual MongoDB records.
    */
-  async getSitePerformance(): Promise<SitePerformanceDto[]> {
-    const sites = await this.siteModel.find({ isActive: true }).lean();
+  async getSitePerformance(siteIds?: string[]): Promise<SitePerformanceDto[]> {
+    const siteQuery = siteIds?.length ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
+    const sites = await this.siteModel.find(siteQuery).lean();
 
     const results: SitePerformanceDto[] = [];
     for (const site of sites) {

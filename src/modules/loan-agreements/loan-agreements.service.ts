@@ -204,9 +204,11 @@ export class LoanAgreementsService implements OnModuleInit {
   }
 
   // ── GET KPIS ─────────────────────────────────────────────────────────────
-  async getKpis(siteId?: string) {
+  async getKpis(siteId?: string | string[]) {
     const query: any = {};
-    if (siteId && siteId !== 'all') {
+    if (Array.isArray(siteId)) {
+      query.siteId = { $in: siteId };
+    } else if (siteId && siteId !== 'all') {
       query.siteId = siteId;
     }
 
@@ -251,9 +253,11 @@ export class LoanAgreementsService implements OnModuleInit {
   }
 
   // ── LIST AGREEMENTS ──────────────────────────────────────────────────────
-  async findAll(siteId?: string, status?: string) {
+  async findAll(siteId?: string | string[], status?: string) {
     const query: any = {};
-    if (siteId && siteId !== 'all') {
+    if (Array.isArray(siteId)) {
+      query.siteId = { $in: siteId };
+    } else if (siteId && siteId !== 'all') {
       query.siteId = siteId;
     }
 

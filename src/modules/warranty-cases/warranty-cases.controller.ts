@@ -13,11 +13,33 @@ import {
 import { CaseStatus, UserRole } from '../../common/enums';
 import { WarrantyCase } from '../../schemas/warranty-case.schema';
 import { PaginatedResponse } from '../../common/dto/pagination.dto';
+import { AuthService, UserProfileDto } from '../auth/auth.service';
 
 @ApiTags('Warranty Cases (CRM & Review Portal)')
 @Controller('warranty-cases')
 export class WarrantyCasesController {
-  constructor(private readonly casesService: WarrantyCasesService) {}
+  constructor(
+    private readonly casesService: WarrantyCasesService,
+    private readonly authService: AuthService,
+  ) {}
+
+  private assertSiteAccess(user: UserProfileDto, siteId: string) {
+    if (user.role === UserRole.ADMIN) return;
+    if (user.role === UserRole.CLERK && user.authorizedSiteIds.includes(siteId)) return;
+    throw new ForbiddenException(`Access denied: You are not assigned to site '${siteId}'.`);
+  }
+
+  private async assertCaseAccess(user: UserProfileDto, caseId: string): Promise<WarrantyCase> {
+    const warrantyCase = await this.casesService.findOne(caseId, user.role, user.id, user.name);
+    if (user.role === UserRole.CLERK) this.assertSiteAccess(user, warrantyCase.siteId);
+    return warrantyCase;
+  }
+
+  private assertTechnician(user: UserProfileDto): void {
+    if (user.role !== UserRole.TECHNICIAN) {
+      throw new ForbiddenException('Access denied: This action is reserved for Technicians.');
+    }
+  }
 
   @Get()
   @ApiOperation({ summary: 'List and filter warranty cases for Clerk Review Portal & Manager queues' })
@@ -51,24 +73,22 @@ export class WarrantyCasesController {
     @Headers('x-user-id') xUserId?: string,
     @Headers('x-user-name') xUserName?: string,
   ): Promise<PaginatedResponse<WarrantyCase>> {
+    const currentUser = await this.authService.resolveUserFromAuthorization(authHeader, xUserId);
     let activeTechId = technicianId;
     let activeTechName = technicianName;
+    let authorizedSiteIds: string[] | undefined;
 
-    if (xUserRole?.toUpperCase() === UserRole.TECHNICIAN) {
-      if (!activeTechId && xUserId) activeTechId = xUserId;
-      if (!activeTechName && xUserName) activeTechName = xUserName;
-
-      if (!activeTechId && authHeader) {
-        const token = authHeader.replace(/^Bearer\s+/i, '');
-        const match = token.match(/jwt_token_\d+_(.+)/);
-        if (match) {
-          activeTechId = match[1];
-        }
-      }
+    if (currentUser.role === UserRole.TECHNICIAN) {
+      activeTechId = currentUser.id;
+      activeTechName = currentUser.name;
+    } else if (currentUser.role === UserRole.CLERK) {
+      if (siteId) this.assertSiteAccess(currentUser, siteId);
+      authorizedSiteIds = siteId ? [siteId] : currentUser.authorizedSiteIds;
     }
 
     return this.casesService.findAll({
       siteId,
+      siteIds: authorizedSiteIds,
       brandId,
       status,
       technicianId: activeTechId,
@@ -92,15 +112,15 @@ export class WarrantyCasesController {
     @Headers('x-user-id') xUserId?: string,
     @Headers('x-user-name') xUserName?: string,
   ): Promise<WarrantyCase> {
-    let callerUserId = xUserId;
-    if (!callerUserId && authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, '');
-      const match = token.match(/jwt_token_\d+_(.+)/);
-      if (match) {
-        callerUserId = match[1];
-      }
-    }
-    return this.casesService.findOne(id, xUserRole, callerUserId, xUserName);
+    const currentUser = await this.authService.resolveUserFromAuthorization(authHeader, xUserId);
+    const warrantyCase = await this.casesService.findOne(
+      id,
+      currentUser.role,
+      currentUser.id,
+      currentUser.name,
+    );
+    if (currentUser.role === UserRole.CLERK) this.assertSiteAccess(currentUser, warrantyCase.siteId);
+    return warrantyCase;
   }
 
   @Post()
@@ -111,15 +131,8 @@ export class WarrantyCasesController {
     @Headers('x-user-role') xUserRole?: string,
     @Headers('x-user-id') xUserId?: string,
   ): Promise<WarrantyCase> {
-    let userId: string | undefined = xUserId;
-    if (!userId && authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, '');
-      const match = token.match(/jwt_token_\d+_(.+)/);
-      if (match) {
-        userId = match[1];
-      }
-    }
-    return this.casesService.create(dto, xUserRole, userId);
+    const currentUser = await this.authService.resolveUserFromAuthorization(authHeader, xUserId);
+    return this.casesService.create(dto, currentUser.role, currentUser.id);
   }
 
   @Post(':id/evidence')
@@ -129,13 +142,11 @@ export class WarrantyCasesController {
   async addEvidence(
     @Param('id') id: string,
     @Body() dto: AddEvidenceDto,
-    @Headers('x-user-role') xUserRole?: string,
+    @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole && xUserRole.toUpperCase() !== UserRole.TECHNICIAN) {
-      throw new ForbiddenException(
-        'Access denied: Admins and Clerks are only authorized to review and flag cases, not upload or retake images. Evidence capture is strictly reserved for Technicians.',
-      );
-    }
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
+    this.assertTechnician(currentUser);
+    await this.assertCaseAccess(currentUser, id);
     return this.casesService.addEvidence(id, dto);
   }
 
@@ -169,13 +180,11 @@ export class WarrantyCasesController {
     @Body('ruleKey') ruleKey: string,
     @Body('evidenceName') evidenceName?: string,
     @Body('ocrExtractedText') ocrExtractedText?: string,
-    @Headers('x-user-role') xUserRole?: string,
+    @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole && xUserRole.toUpperCase() !== UserRole.TECHNICIAN) {
-      throw new ForbiddenException(
-        'Access denied: Evidence upload is reserved for Technicians.',
-      );
-    }
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
+    this.assertTechnician(currentUser);
+    await this.assertCaseAccess(currentUser, id);
     if (!file) throw new BadRequestException('No file received. Send the file as multipart/form-data field named "file".');
     if (!ruleKey) throw new BadRequestException('ruleKey is required.');
 
@@ -186,7 +195,14 @@ export class WarrantyCasesController {
   @ApiOperation({
     summary: 'Attach Voice to Tech dictation transcript and original audio clip to warranty case',
   })
-  async addVoiceNote(@Param('id') id: string, @Body() dto: AddVoiceNoteDto): Promise<WarrantyCase> {
+  async addVoiceNote(
+    @Param('id') id: string,
+    @Body() dto: AddVoiceNoteDto,
+    @Headers('authorization') authorization?: string,
+  ): Promise<WarrantyCase> {
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
+    this.assertTechnician(currentUser);
+    await this.assertCaseAccess(currentUser, id);
     return this.casesService.addVoiceNote(id, dto);
   }
 
@@ -206,12 +222,15 @@ export class WarrantyCasesController {
     @UploadedFile() file: Express.Multer.File,
     @Body('pinnedToEvidenceKey') pinnedToEvidenceKey?: string,
     @Body('recordedBy') recordedBy?: string,
-    @Headers('x-user-name') xUserName?: string,
+    @Headers('authorization') authorization?: string,
   ) {
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
+    this.assertTechnician(currentUser);
+    await this.assertCaseAccess(currentUser, id);
     if (!file) {
       throw new BadRequestException('No audio file received. Send file as multipart/form-data field named "file".');
     }
-    const author = recordedBy || xUserName || 'Technician';
+    const author = recordedBy || currentUser.name;
     return this.casesService.uploadAndTranscribeVoiceNote(id, file, pinnedToEvidenceKey, author);
   }
 
@@ -221,11 +240,11 @@ export class WarrantyCasesController {
   })
   async submitFromWorkshop(
     @Param('id') id: string,
-    @Headers('x-user-role') xUserRole?: string,
+    @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole && xUserRole.toUpperCase() !== UserRole.TECHNICIAN) {
-      throw new ForbiddenException('Access denied: Only technicians can submit cases from workshop to review.');
-    }
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
+    this.assertTechnician(currentUser);
+    await this.assertCaseAccess(currentUser, id);
     return this.casesService.submitFromWorkshop(id);
   }
 
@@ -238,12 +257,16 @@ export class WarrantyCasesController {
     @Body() dto: FlagCaseDto,
     @Headers('x-user-role') xUserRole?: string,
     @Headers('x-user-name') xUserName?: string,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') xUserId?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole === UserRole.TECHNICIAN) {
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization, xUserId);
+    if (currentUser.role === UserRole.TECHNICIAN) {
       throw new ForbiddenException('Access denied: Technicians cannot flag cases. Flagging is reserved for Warranty Clerks and Admins.');
     }
-    if (xUserName && (!dto.flaggedBy || dto.flaggedBy.includes('Sarah Jenkins'))) {
-      dto.flaggedBy = `${xUserName} (Warranty Admin)`;
+    await this.assertCaseAccess(currentUser, id);
+    if (!dto.flaggedBy || dto.flaggedBy.includes('Sarah Jenkins')) {
+      dto.flaggedBy = `${currentUser.name} (${currentUser.role === UserRole.CLERK ? 'Warranty Clerk' : 'Warranty Admin'})`;
     }
     return this.casesService.flagCase(id, dto);
   }
@@ -256,16 +279,30 @@ export class WarrantyCasesController {
     @Param('id') id: string,
     @Body() dto: MarkSubmittedDto,
     @Headers('x-user-role') xUserRole?: string,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') xUserId?: string,
   ): Promise<WarrantyCase> {
-    if (xUserRole === UserRole.TECHNICIAN) {
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization, xUserId);
+    if (currentUser.role === UserRole.TECHNICIAN) {
       throw new ForbiddenException('Access denied: Technicians cannot approve and submit claims to OEM. This action is reserved for Warranty Clerks and Admins.');
     }
+    await this.assertCaseAccess(currentUser, id);
     return this.casesService.markSubmitted(id, dto);
   }
 
   @Post(':id/clerk-note')
   @ApiOperation({ summary: 'Add internal clerk review note' })
-  async addClerkNote(@Param('id') id: string, @Body('note') note: string): Promise<WarrantyCase> {
+  async addClerkNote(
+    @Param('id') id: string,
+    @Body('note') note: string,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') xUserId?: string,
+  ): Promise<WarrantyCase> {
+    const currentUser = await this.authService.resolveUserFromAuthorization(authorization, xUserId);
+    if (currentUser.role === UserRole.TECHNICIAN) {
+      throw new ForbiddenException('Access denied: Clerk notes are reserved for Warranty Clerks and Admins.');
+    }
+    await this.assertCaseAccess(currentUser, id);
     return this.casesService.addClerkNote(id, note);
   }
 }

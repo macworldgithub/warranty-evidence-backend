@@ -4,9 +4,11 @@ import { GeofenceController } from './geofence.controller';
 import { GeofenceService } from './geofence.service';
 import { Site, SiteSchema } from '../../schemas/site.schema';
 import { User, UserSchema } from '../../schemas/user.schema';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
+    AuthModule,
     MongooseModule.forFeature([
       { name: Site.name, schema: SiteSchema },
       { name: User.name, schema: UserSchema },

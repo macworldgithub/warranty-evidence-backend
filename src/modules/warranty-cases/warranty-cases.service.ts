@@ -863,6 +863,7 @@ export class WarrantyCasesService implements OnModuleInit {
 
   async findAll(filters?: {
     siteId?: string;
+    siteIds?: string[];
     brandId?: string;
     status?: string;
     technicianId?: string;
@@ -877,7 +878,8 @@ export class WarrantyCasesService implements OnModuleInit {
   }): Promise<PaginatedResponse<WarrantyCase>> {
     const query: any = {};
 
-    if (filters?.siteId) query.siteId = filters.siteId;
+    if (filters?.siteIds?.length) query.siteId = { $in: filters.siteIds };
+    else if (filters?.siteId) query.siteId = filters.siteId;
     if (filters?.brandId) query.brandId = filters.brandId;
     if (filters?.status) query.status = filters.status;
     if (filters?.ro) query.roNumber = { $regex: filters.ro, $options: 'i' };
@@ -969,12 +971,12 @@ export class WarrantyCasesService implements OnModuleInit {
 
   async create(dto: CreateWarrantyCaseDto, callerRole?: string, callerUserId?: string): Promise<WarrantyCase> {
     // Role enforcement: Only technicians can raise warranty tickets
-    if (callerRole && callerRole === UserRole.ADMIN) {
-      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
+    if (callerRole && callerRole !== UserRole.TECHNICIAN) {
+      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets.');
     }
 
-    if (dto.creatorRole && dto.creatorRole === UserRole.ADMIN) {
-      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
+    if (dto.creatorRole && dto.creatorRole !== UserRole.TECHNICIAN) {
+      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets.');
     }
 
     if (callerUserId) {

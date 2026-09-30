@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   AuthService,
@@ -94,34 +94,57 @@ export class AuthController {
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile and site permissions' })
   @ApiResponse({ status: 200, type: UserProfileDto })
-  async getMe(): Promise<UserProfileDto> {
-    return this.authService.getMe('usr_admin_1');
+  async getMe(
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<UserProfileDto> {
+    return this.authService.resolveUserFromAuthorization(authorization, userId);
   }
 
   @Get('users')
   @ApiOperation({ summary: 'List all portal users and assigned roles (Group Admin)' })
   @ApiResponse({ status: 200, type: [UserProfileDto] })
-  async findAllUsers(): Promise<UserProfileDto[]> {
+  async findAllUsers(
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<UserProfileDto[]> {
+    await this.authService.assertAdmin(authorization, userId);
     return this.authService.findAllUsers();
   }
 
   @Post('users')
   @ApiOperation({ summary: 'Create a new user account (Group Admin)' })
   @ApiResponse({ status: 201, type: UserProfileDto })
-  async createUser(@Body() dto: CreateUserDto): Promise<UserProfileDto> {
+  async createUser(
+    @Body() dto: CreateUserDto,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<UserProfileDto> {
+    await this.authService.assertAdmin(authorization, userId);
     return this.authService.createUser(dto);
   }
 
   @Patch('users/:id')
   @ApiOperation({ summary: 'Update user account (Group Admin)' })
   @ApiResponse({ status: 200, type: UserProfileDto })
-  async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto): Promise<UserProfileDto> {
+  async updateUser(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<UserProfileDto> {
+    await this.authService.assertAdmin(authorization, userId);
     return this.authService.updateUser(id, dto);
   }
 
   @Delete('users/:id')
   @ApiOperation({ summary: 'Delete user account (Group Admin)' })
-  async deleteUser(@Param('id') id: string): Promise<{ success: boolean; message: string }> {
+  async deleteUser(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    await this.authService.assertAdmin(authorization, userId);
     return this.authService.deleteUser(id);
   }
 }
