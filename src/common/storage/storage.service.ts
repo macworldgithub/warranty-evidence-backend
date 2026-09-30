@@ -71,9 +71,13 @@ export class StorageService {
       const url = await this.uploadToS3(buffer, mimeType, oemFileName, caseId);
 
       if (isImage) {
-        const thumbBuffer = await this.generateThumbnail(buffer);
-        const thumbName = `thumbs/${oemFileName}`;
-        thumbnailUrl = await this.uploadToS3(thumbBuffer, 'image/jpeg', thumbName, caseId);
+        try {
+          const thumbBuffer = await this.generateThumbnail(buffer);
+          const thumbName = `thumbs/${oemFileName}`;
+          thumbnailUrl = await this.uploadToS3(thumbBuffer, 'image/jpeg', thumbName, caseId);
+        } catch (thumbErr: any) {
+          this.logger.warn(`Thumbnail generation skipped: ${thumbErr?.message}`);
+        }
       }
 
       return { url, thumbnailUrl, oemFileName, provider: 's3' };
@@ -81,8 +85,12 @@ export class StorageService {
       const url = await this.saveToLocal(buffer, oemFileName, caseId);
 
       if (isImage) {
-        const thumbBuffer = await this.generateThumbnail(buffer);
-        thumbnailUrl = await this.saveToLocal(thumbBuffer, oemFileName, caseId, true);
+        try {
+          const thumbBuffer = await this.generateThumbnail(buffer);
+          thumbnailUrl = await this.saveToLocal(thumbBuffer, oemFileName, caseId, true);
+        } catch (thumbErr: any) {
+          this.logger.warn(`Thumbnail generation skipped: ${thumbErr?.message}`);
+        }
       }
 
       return { url, thumbnailUrl, oemFileName, provider: 'local' };
