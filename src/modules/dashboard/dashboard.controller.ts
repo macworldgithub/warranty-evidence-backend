@@ -4,7 +4,7 @@ import {
   DashboardService,
   DashboardKpisDto,
   FlagReasonStatDto,
-  SitePerformanceDto,
+  SitePerformancePaginatedDto,
 } from './dashboard.service';
 import { AuthService } from '../auth/auth.service';
 import { UserRole } from '../../common/enums';
@@ -52,12 +52,22 @@ export class DashboardController {
 
   @Get('sites-performance')
   @ApiOperation({ summary: 'Get rooftop-by-rooftop pass rates and submission velocity' })
-  @ApiResponse({ status: 200, type: [SitePerformanceDto] })
+  @ApiResponse({ status: 200, type: SitePerformancePaginatedDto })
   async getSitePerformance(
     @Query('siteId') siteId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
     @Headers('authorization') authorization?: string,
     @Headers('x-user-id') userId?: string,
-  ): Promise<SitePerformanceDto[]> {
-    return this.dashboardService.getSitePerformance(await this.getSiteScope(authorization, userId, siteId));
+  ): Promise<SitePerformancePaginatedDto> {
+    return this.dashboardService.getSitePerformance(
+      await this.getSiteScope(authorization, userId, siteId),
+      {
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+        search,
+      },
+    );
   }
 }

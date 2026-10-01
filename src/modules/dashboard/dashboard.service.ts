@@ -48,6 +48,9 @@ export class SitePerformanceDto {
   @ApiProperty({ example: 'Booran BYD Cranbourne' })
   siteName: string;
 
+  @ApiProperty({ example: 'CR-' })
+  roPrefix: string;
+
   @ApiProperty({ example: 64 })
   totalCases: number;
 
@@ -59,6 +62,34 @@ export class SitePerformanceDto {
 
   @ApiProperty({ example: 2.8 })
   avgHoursToSubmit: number;
+}
+
+export class DashboardPaginationMetaDto {
+  @ApiProperty({ example: 38 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 10 })
+  limit: number;
+
+  @ApiProperty({ example: 4 })
+  totalPages: number;
+
+  @ApiProperty({ example: true })
+  hasNextPage: boolean;
+
+  @ApiProperty({ example: false })
+  hasPrevPage: boolean;
+}
+
+export class SitePerformancePaginatedDto {
+  @ApiProperty({ type: [SitePerformanceDto] })
+  data: SitePerformanceDto[];
+
+  @ApiProperty({ type: DashboardPaginationMetaDto })
+  meta: DashboardPaginationMetaDto;
 }
 
 const FLAG_REASON_LABELS: Record<string, string> = {
@@ -172,9 +203,31 @@ export class DashboardService {
   /**
    * Computes per-site performance metrics from actual MongoDB records.
    */
-  async getSitePerformance(siteIds?: string[]): Promise<SitePerformanceDto[]> {
-    const siteQuery = siteIds?.length ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
-    const sites = await this.siteModel.find(siteQuery).lean();
+  async getSitePerformance(
+    siteIds?: string[],
+    options?: { page?: number; limit?: number; search?: string },
+  ): Promise<SitePerformancePaginatedDto> {
+    const page = Math.max(1, Number(options?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(options?.limit) || 10));
+    const search = (options?.search || '').trim();
+
+    const siteQuery: any = siteIds?.length ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      siteQuery.$or = [
+        { id: regex },
+        { name: regex },
+        { roPrefix: regex },
+        { region: regex },
+        { operator: regex },
+      ];
+    }
+
+    const total = await this.siteModel.countDocuments(siteQuery);
+    const totalPages = Math.ceil(total / limit) || 1;
+    const skip = (page - 1) * limit;
+    const sites = await this.siteModel.find(siteQuery).sort({ name: 1 }).skip(skip).limit(limit).lean();
 
     const results: SitePerformanceDto[] = [];
     for (const site of sites) {
@@ -206,6 +259,7 @@ export class DashboardService {
       results.push({
         siteId: site.id,
         siteName: site.name,
+        roPrefix: site.roPrefix,
         totalCases,
         firstTimePassRate,
         flaggedCount,
@@ -213,6 +267,16 @@ export class DashboardService {
       });
     }
 
-    return results;
+    return {
+      data: results,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 }
