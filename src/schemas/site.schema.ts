@@ -15,6 +15,15 @@ export class Site {
   name: string;
 
   @Prop({ required: true })
+  dealership: string;
+
+  @Prop({ required: true })
+  region: string;
+
+  @Prop({ required: true })
+  operator: string;
+
+  @Prop({ required: true })
   location: string;
 
   @Prop({ required: true })
