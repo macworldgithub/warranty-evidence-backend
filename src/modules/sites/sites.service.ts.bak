@@ -169,35 +169,13 @@ export class SitesService implements OnModuleInit {
       const indexes = await this.siteModel.collection.indexes();
       if (indexes.some((idx) => idx.name === 'code_1')) {
         await this.siteModel.collection.dropIndex('code_1');
-        console.log('🍃 Dropped legacy code_1 index from sites collection');
+        console.log('ðŸƒ Dropped legacy code_1 index from sites collection');
       }
     } catch (err) {
       // ignore
     }
 
-    console.log('🍃 Synchronizing Booran dealership sites in MongoDB...');
-    // -----------------------------------------------------------------------
-    // GPS coordinates for known physical sites.
-    // Keyed by the slug produced from the dealership name (site_<slug>).
-    // All South Morang rooftops share the same precinct at
-    //   8 Wealthiland Drive, South Morang VIC 3082
-    //   lat: -37.6544013, lng: 145.0816436
-    // -----------------------------------------------------------------------
-    const SITE_COORDS: Record<string, { latitude: number; longitude: number; location: string }> = {
-      // -- South Morang precinct (8 Wealthiland Drive, South Morang VIC 3082) --
-      site_south_morang_byd:     { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      site_south_morang_chery:   { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      site_south_morang_hyundai: { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      site_south_morang_kia:     { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      site_south_morang_lepas:   { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      // -- Cranbourne precinct (reference) -----------------------------------
-      site_chery_cranbourne:   { latitude: -38.0992, longitude: 145.2813, location: 'Cranbourne, VIC 3977' },
-      site_cranbourne_hyundai: { latitude: -38.0992, longitude: 145.2813, location: 'Cranbourne, VIC 3977' },
-      site_cranbourne_geely:   { latitude: -38.0992, longitude: 145.2813, location: 'Cranbourne, VIC 3977' },
-      site_cranbourne_kia:     { latitude: -38.0992, longitude: 145.2813, location: 'Cranbourne, VIC 3977' },
-      site_cranbourne_mg:      { latitude: -38.0992, longitude: 145.2813, location: 'Cranbourne, VIC 3977' },
-    };
-
+    console.log('ðŸƒ Synchronizing Booran dealership sites in MongoDB...');
     const rooftopDirectory = [
       ['Bayside Skoda', 'Cheltenham / Bayside', 'Neil'],
       ['Booran GMSV Cheltenham', 'Cheltenham / Bayside', 'Neil'],
@@ -241,22 +219,17 @@ export class SitesService implements OnModuleInit {
 
     const defaultSites = rooftopDirectory.map(([dealership, region, operator]) => {
       const slug = dealership.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-      const siteId = `site_${slug}`;
-      const coords = SITE_COORDS[siteId];
       return {
-        id: siteId,
+        id: `site_${slug}`,
         code: slug.toUpperCase(),
         name: dealership,
         dealership,
         region,
         operator,
-        // Use address-level location string when available, otherwise region label
-        location: coords?.location ?? region,
+        location: region,
         roPrefix: `${slug.toUpperCase()}-`,
         authorizedBrandIds: [],
         isActive: true,
-        // Inject GPS pin when we know the physical address
-        ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
         geofenceRadiusMeters: 200,
         geofenceEnabled: true,
       };
@@ -273,7 +246,7 @@ export class SitesService implements OnModuleInit {
         { upsert: true },
       );
     }
-    console.log(`🍃 Successfully synchronized ${defaultSites.length} dealership rooftops`);
+    console.log(`ðŸƒ Successfully synchronized ${defaultSites.length} dealership rooftops`);
   }
 
   async findAll(): Promise<Site[]> {
@@ -339,3 +312,4 @@ export class SitesService implements OnModuleInit {
     return { message: `Site ${id} deactivated` };
   }
 }
+
