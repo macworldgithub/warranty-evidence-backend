@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -169,13 +169,13 @@ export class SitesService implements OnModuleInit {
       const indexes = await this.siteModel.collection.indexes();
       if (indexes.some((idx) => idx.name === 'code_1')) {
         await this.siteModel.collection.dropIndex('code_1');
-        console.log('🍃 Dropped legacy code_1 index from sites collection');
+        console.log('?? Dropped legacy code_1 index from sites collection');
       }
     } catch (err) {
       // ignore
     }
 
-    console.log('🍃 Synchronizing Booran dealership sites in MongoDB...');
+    console.log('?? Synchronizing Booran dealership sites in MongoDB...');
     // -----------------------------------------------------------------------
     // GPS coordinates for known physical sites.
     // Keyed by the slug produced from the dealership name (site_<slug>).
@@ -184,11 +184,11 @@ export class SitesService implements OnModuleInit {
     //   lat: -37.6544013, lng: 145.0816436
     // -----------------------------------------------------------------------
     const SITE_COORDS: Record<string, { latitude: number; longitude: number; location: string }> = {
-      // -- South Morang precinct (8 Wealthiland Drive, South Morang VIC 3082) --
+      // -- South Morang per-brand physical rooftop addresses --
+      site_south_morang_hyundai: { latitude: -37.6680,    longitude: 145.0740,    location: '2a Oleander Drive, South Morang VIC 3082' },
       site_south_morang_byd:     { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      site_south_morang_chery:   { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
-      site_south_morang_hyundai: { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
       site_south_morang_kia:     { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
+      site_south_morang_chery:   { latitude: -37.6511,    longitude: 145.0841,    location: '545 McDonalds Rd, South Morang VIC 3082' },
       site_south_morang_lepas:   { latitude: -37.6544013, longitude: 145.0816436, location: '8 Wealthiland Drive, South Morang VIC 3082' },
       // -- Cranbourne precinct (reference) -----------------------------------
       site_chery_cranbourne:   { latitude: -38.0992, longitude: 145.2813, location: 'Cranbourne, VIC 3977' },
@@ -273,7 +273,7 @@ export class SitesService implements OnModuleInit {
         { upsert: true },
       );
     }
-    console.log(`🍃 Successfully synchronized ${defaultSites.length} dealership rooftops`);
+    console.log(`?? Successfully synchronized ${defaultSites.length} dealership rooftops`);
   }
 
   async findAll(): Promise<Site[]> {

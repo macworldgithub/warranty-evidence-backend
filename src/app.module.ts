@@ -23,6 +23,7 @@ import { LoanAgreementsModule } from './modules/loan-agreements/loan-agreements.
 import { GeofenceModule } from './modules/geofence/geofence.module';
 import { TestDrivesModule } from './modules/test-drives/test-drives.module';
 import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.module';
+import { HoistsModule } from './modules/hoists/hoists.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.
     GeofenceModule,
     TestDrivesModule,
     LegalDocumentsModule,
+    HoistsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
