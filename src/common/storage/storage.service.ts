@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -121,6 +122,13 @@ export class StorageService {
   }
 
   // ─── S3 helpers ────────────────────────────────────────────────────────────
+  /** Short-lived download URL; never sign downloads with a PUT command. */
+  async getReadUrl(storedUrl: string, expiresInSeconds = 900): Promise<string> {
+    if (!this.useS3 || !this.s3Client) return storedUrl;
+    const key = this.s3KeyFromUrl(storedUrl);
+    if (!key) return storedUrl;
+    return getSignedUrl(this.s3Client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: expiresInSeconds });
+  }
 
   private async uploadToS3(
     buffer: Buffer,

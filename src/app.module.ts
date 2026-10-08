@@ -24,6 +24,8 @@ import { GeofenceModule } from './modules/geofence/geofence.module';
 import { TestDrivesModule } from './modules/test-drives/test-drives.module';
 import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.module';
 import { HoistsModule } from './modules/hoists/hoists.module';
+import { BulletinsModule } from './modules/bulletins/bulletins.module';
+import { HistoricalArchiveModule } from './modules/historical-archive/historical-archive.module';
 
 @Module({
   imports: [
@@ -67,6 +69,8 @@ import { HoistsModule } from './modules/hoists/hoists.module';
     TestDrivesModule,
     LegalDocumentsModule,
     HoistsModule,
+    BulletinsModule,
+    HistoricalArchiveModule,
   ],
   controllers: [AppController],
   providers: [AppService],
