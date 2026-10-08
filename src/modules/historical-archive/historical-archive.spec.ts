@@ -20,9 +20,15 @@ describe('private historical archive HTTP access', () => {
     root = await mkdtemp(path.join(os.tmpdir(), 'workphotos-test-'));
     await mkdir(path.join(root, 'objects'));
     await writeFile(path.join(root, 'objects', hash), 'private report');
+    await writeFile(path.join(root, 'objects', 'b'.repeat(64)), `version https://git-lfs.github.com/spec/v1\noid sha256:${'b'.repeat(64)}\nsize 3151321\n`);
+    await writeFile(path.join(root, 'objects', 'c'.repeat(64)), 'partial');
     await writeFile(path.join(root, 'index.json'), JSON.stringify({ version: 1, importedAt: '2026-10-08', records: [
       { id: 'job-one', title: 'RO 123 ABC456', organisation: 'Booran Motors', reportText: 'Recall completed', issues: [], files: [{ id: 'file-one', name: 'report.txt', originalPath: 'text/report.txt', hash, bytes: 14 }] },
       { id: 'job-two', title: 'Other job', organisation: 'Booran Motors', reportText: '', issues: [], files: [] },
+      { id: 'not-hydrated', title: 'Pending server files', organisation: 'Booran Motors', reportText: '', issues: [], files: [
+        { id: 'pointer', name: 'images.zip', hash: 'b'.repeat(64), bytes: 3151321 },
+        { id: 'truncated', name: 'report.pdf', hash: 'c'.repeat(64), bytes: 755483 },
+      ] },
     ] }));
     const module = await Test.createTestingModule({
       controllers: [HistoricalArchiveController], providers: [HistoricalArchiveService,
@@ -65,5 +71,11 @@ describe('private historical archive HTTP access', () => {
   it('does not expose arbitrary files or jobs', async () => {
     await request(app.getHttpServer()).get('/historical-archive/job-one/files/index.json').set('Authorization', 'Bearer CLERK|clerk@skoda.com').expect(404);
     await request(app.getHttpServer()).get('/historical-archive/missing').set('Authorization', 'Bearer CLERK|clerk@skoda.com').expect(404);
+  });
+  it('rejects LFS pointers and truncated files instead of sending broken downloads', async () => {
+    const pointer = await request(app.getHttpServer()).get('/historical-archive/not-hydrated/files/pointer').set('Authorization', 'Bearer CLERK|clerk@skoda.com').expect(503);
+    expect(pointer.body.message).toContain('has not been downloaded');
+    const truncated = await request(app.getHttpServer()).get('/historical-archive/not-hydrated/files/truncated').set('Authorization', 'Bearer CLERK|clerk@skoda.com').expect(503);
+    expect(truncated.body.message).toContain('incomplete');
   });
 });

@@ -22,6 +22,8 @@ Export caveats are retained per job. Captured dates are export dates, not repair
 
 ## Checks
 
+If reports fail to open or ZIP downloads appear empty in production while the local originals work, check whether the server has Git LFS pointer files instead of their contents. Run `git lfs pull` in the production backend checkout, then restart the service. The archive objects must be their full sizes, not small text files beginning with `version https://git-lfs.github.com/spec/v1`. A Git-based build must download LFS objects before packaging, and include them in the runtime. When the hosting platform cannot include the archive, use private persistent storage and WORKPHOTOS_ARCHIVE_DIR instead. The API rejects pointer files and size mismatches; this safeguard does not download missing server files.
+
 ```
 node --test tools/import-workphotos.test.mjs
 npm test -- --runInBand historical-archive

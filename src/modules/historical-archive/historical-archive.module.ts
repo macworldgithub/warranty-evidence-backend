@@ -1,6 +1,6 @@
 import { Controller, Get, Headers, Param, Query, Res, Module, Injectable, ForbiddenException, NotFoundException, ServiceUnavailableException, Header } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readFile, realpath } from 'fs/promises';
+import { readFile, realpath, open } from 'fs/promises';
 import * as path from 'path';
 import type { Response } from 'express';
 import { AuthModule } from '../auth/auth.module';
@@ -49,12 +49,24 @@ export class HistoricalArchiveService {
   async file(id: string, fileId: string) {
     const file = (await this.record(id)).files.find(item => item.id === fileId);
     if (!file || !/^[a-f0-9]{64}$/.test(file.hash)) throw new NotFoundException('Archived file not found.');
+    let filename: string;
     try {
       const objects = await realpath(path.join(this.root(), 'objects'));
-      const filename = await realpath(path.join(objects, file.hash));
+      filename = await realpath(path.join(objects, file.hash));
       if (path.dirname(filename) !== objects) throw new Error('Outside private storage');
-      return { filename, name: file.name };
     } catch { throw new NotFoundException('Archived file is unavailable.'); }
+    const handle = await open(filename, 'r');
+    try {
+      const header = Buffer.alloc(150);
+      const { bytesRead } = await handle.read(header, 0, header.length, 0);
+      if (header.subarray(0, bytesRead).toString('utf8').startsWith('version https://git-lfs.github.com/spec/v1')) {
+        throw new ServiceUnavailableException('The archive file has not been downloaded to the server yet. Please contact an administrator.');
+      }
+      if ((await handle.stat()).size !== file.bytes) {
+        throw new ServiceUnavailableException('The archive file on the server is incomplete. Please contact an administrator.');
+      }
+    } finally { await handle.close(); }
+    return { filename, name: file.name };
   }
 }
 
