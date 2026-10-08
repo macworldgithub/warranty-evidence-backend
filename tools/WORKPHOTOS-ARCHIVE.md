@@ -7,12 +7,14 @@ Read-only WorkPhotos records are separate from active warranty cases and dealers
 From the backend directory:
 
 ```
-node tools/import-workphotos.mjs "../tools/workphotos-archive/archive" "./private/workphotos"
+node tools/import-workphotos.mjs "../tools/workphotos-archive/archive" "./archive"
 ```
 
 The importer leaves source files untouched, verifies SHA-256 checksums, stores immutable content-addressed objects and publishes its index only after completion. Repeated imports update existing source job IDs without duplicating records; records absent from a subsequent export are retained. Run only one importer at a time. Files are copied without extracting ZIPs. Original PDF reports and photo ZIPs can be downloaded through the portal. Report text is searchable; generic job-list captures are preserved as files but excluded from search.
 
-Mount the entire private/workphotos directory on persistent backend storage and back it up independently. Set WORKPHOTOS_ARCHIVE_DIR to its absolute path if the backend is started from another working directory. Never place it under public, uploads, a static web root, or a public bucket. The index and all objects must travel together. A normal Git deployment excludes this data; deploy both application code and this private data directory. No production upload is performed by the local importer.
+The backend reads from its own archive directory by default, independently of the working directory used to start it. The folder contains index.json and an objects directory with all preserved files. It is separate from uploads; existing uploads and their routes are unchanged. Archive files are served only through the authenticated historical-archive API, never through a public static route.
+
+Upload the entire archive directory to persistent storage alongside the backend package.json and back it up independently. For a different storage location, set WORKPHOTOS_ARCHIVE_DIR to its absolute path (relative values resolve from the backend directory). Never place it under public, uploads, a static web root, or a public bucket. The index and all objects must travel together. A normal Git deployment excludes this data; deploy both application code and this private data directory. No production upload is performed by the local importer.
 
 Start/restart the backend after deploying the module and deploy the frontend. The new route is /historical-archive. Missing storage produces an unavailable message rather than an empty successful archive. Confirm each of the three real accounts can list/search/download and an unrelated clerk gets 403, including on direct API links. Automated tests cover the route authorization with a mocked session resolver; live sessions still require a deployment smoke test.
 

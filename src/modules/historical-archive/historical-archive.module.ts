@@ -17,7 +17,11 @@ interface ArchiveIndex { version: number; importedAt: string; records: ArchiveRe
 @Injectable()
 export class HistoricalArchiveService {
   constructor(private readonly config: ConfigService) {}
-  private root() { return path.resolve(this.config.get<string>('WORKPHOTOS_ARCHIVE_DIR') || './private/workphotos'); }
+  private root() {
+    // src/ and dist/ share this depth. Resolve from the backend, not the launch directory.
+    const backendRoot = path.resolve(__dirname, '../../..');
+    return path.resolve(backendRoot, this.config.get<string>('WORKPHOTOS_ARCHIVE_DIR') || 'archive');
+  }
   private async index(): Promise<ArchiveIndex> {
     try {
       const index = JSON.parse(await readFile(path.join(this.root(), 'index.json'), 'utf8')) as ArchiveIndex;
