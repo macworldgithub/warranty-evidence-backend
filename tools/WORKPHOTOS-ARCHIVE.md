@@ -1,6 +1,6 @@
 # Booran Motors historical archive
 
-Read-only WorkPhotos records are separate from active warranty cases and dealership assignments. Access requires an active authenticated ADMIN account, or a CLERK account with one of these exact email addresses: clerk@dandenong.com, clerk@morang.com, clerk@skoda.com. Other and future clerks receive no archive access. The server checks every list, detail and download request; frontend visibility is only a convenience.
+Read-only WorkPhotos records are separate from active warranty cases and dealership assignments. Access requires an active authenticated ADMIN account, or a CLERK account with one of these exact email addresses: clerk@dandenong.com, clerk@morang.com, clerk@skoda.com, sioneh@totalaftersalessolutions.com. Other and future clerks receive no archive access. The server checks every list, detail and download request; frontend visibility is only a convenience.
 
 ## Import and deployment
 

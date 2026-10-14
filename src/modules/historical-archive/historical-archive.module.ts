@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { AuthModule } from '../auth/auth.module';
 import { AuthService } from '../auth/auth.service';
 
-const ARCHIVE_CLERKS = new Set(['clerk@dandenong.com', 'clerk@morang.com', 'clerk@skoda.com']);
+const ARCHIVE_CLERKS = new Set(['clerk@dandenong.com', 'clerk@morang.com', 'clerk@skoda.com', 'sioneh@totalaftersalessolutions.com']);
 export function canReadArchive(user: { role: string; email: string }): boolean {
   return user.role === 'ADMIN' || (user.role === 'CLERK' && ARCHIVE_CLERKS.has(user.email.trim().toLowerCase()));
 }

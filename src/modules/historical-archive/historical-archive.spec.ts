@@ -45,7 +45,7 @@ describe('private historical archive HTTP access', () => {
   });
   afterAll(async () => { await app.close(); await rm(root, { recursive: true, force: true }); });
   const routes = ['/historical-archive', '/historical-archive/job-one', '/historical-archive/job-one/files/file-one'];
-  it.each(['clerk@dandenong.com', 'clerk@morang.com', 'clerk@skoda.com'])('permits all archive routes for %s', async email => {
+  it.each(['clerk@dandenong.com', 'clerk@morang.com', 'clerk@skoda.com', 'sioneh@totalaftersalessolutions.com'])('permits all archive routes for %s', async email => {
     for (const route of routes) await request(app.getHttpServer()).get(route).set('Authorization', `Bearer CLERK|${email}`).expect(200).expect('Cache-Control', 'private, no-store');
   });
   it('permits admins', async () => {
