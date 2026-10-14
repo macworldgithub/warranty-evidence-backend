@@ -26,6 +26,7 @@ import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.
 import { HoistsModule } from './modules/hoists/hoists.module';
 import { BulletinsModule } from './modules/bulletins/bulletins.module';
 import { HistoricalArchiveModule } from './modules/historical-archive/historical-archive.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { HistoricalArchiveModule } from './modules/historical-archive/historical
     HoistsModule,
     BulletinsModule,
     HistoricalArchiveModule,
+    InvitationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
