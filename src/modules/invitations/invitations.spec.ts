@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException, ValidationPipe, ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request = require('supertest');
 import { InvitationsService } from './invitations.service';
@@ -73,7 +73,7 @@ function setup() {
   const service = new InvitationsService(invitations, users as any, sites as any, mail as any);
   const create = () => service.create({ name: ' Sample Tech ', email: ' TECH@EXAMPLE.COM ', siteId: 'site-one' }, 'admin-one');
   const token = () => new URLSearchParams(new URL(mail.send.mock.calls[mail.send.mock.calls.length - 1][3]).hash.slice(1)).get('token')!;
-  return { service, state, mail, users, sites, create, token };
+  return { service, state, mail, users, sites, invitations, create, token };
 }
 
 describe('technician invitation lifecycle', () => {
@@ -105,7 +105,7 @@ describe('technician invitation lifecycle', () => {
     expect((await ctx.service.list())[0].status).toBe('EXPIRED');
   });
   it('keeps failed email delivery visible and allows resending', async () => {
-    const ctx = setup(); ctx.mail.send.mockRejectedValueOnce(new Error('SMTP unavailable'));
+    const ctx = setup(); ctx.mail.send.mockRejectedValueOnce(new ServiceUnavailableException('SMTP unavailable'));
     await expect(ctx.create()).rejects.toThrow('SMTP unavailable');
     expect(ctx.state.invitations[0].status).toBe('DELIVERY_FAILED');
     await expect(ctx.service.inspect(ctx.token())).rejects.toBeInstanceOf(BadRequestException);
@@ -132,6 +132,16 @@ describe('technician invitation lifecycle', () => {
     const results = await Promise.allSettled([ctx.service.accept(secret, 'Password123!'), ctx.service.accept(secret, 'Password123!')]);
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     expect(ctx.state.users).toHaveLength(1);
+  });
+  it('provides a safe error reference for unexpected creation failures', async () => {
+    const ctx = setup();
+    ctx.invitations.create.mockRejectedValueOnce({ name: 'ValidationError', errors: { invitedBy: { message: 'private connection string or token' } } });
+    try { await ctx.create(); throw new Error('Expected rejection'); }
+    catch (error) {
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      expect(error.message).toContain('create-invitation: ValidationError; fields invitedBy');
+      expect(error.message).not.toContain('private connection string or token');
+    }
   });
 });
 

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException, HttpException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { createHash, randomBytes, randomUUID } from 'crypto';
@@ -11,6 +11,7 @@ export const tokenDigest = (token: string) => createHash('sha256').update(token)
 const invalid = () => new BadRequestException('This invitation is invalid, expired, cancelled, or already used. Ask your administrator for a new invitation.');
 @Injectable()
 export class InvitationsService {
+  private readonly logger = new Logger(InvitationsService.name);
   constructor(
     @InjectModel(Invitation.name) private readonly invitations: Model<InvitationDocument>,
     @InjectModel(User.name) private readonly users: Model<UserDocument>,
@@ -20,6 +21,17 @@ export class InvitationsService {
   private view(invitation: any) {
     const { tokenHash, _id, __v, ...result } = invitation;
     return { ...result, role: 'TECHNICIAN', status: invitation.status === 'PENDING' && new Date(invitation.expiresAt).getTime() <= Date.now() ? 'EXPIRED' : invitation.status };
+  }
+  private failure(error: any, stage: string): never {
+    if (error instanceof HttpException) throw error;
+    // Report names/codes, never raw database errors, credentials, passwords or tokens.
+    const name = /^[A-Za-z][A-Za-z\d]{0,60}$/.test(error?.name || '') ? error.name : 'DatabaseError';
+    const code = typeof error?.code === 'number' ? ` code ${error.code}` : '';
+    const allowedFields = new Set(['id', 'name', 'email', 'siteId', 'invitedBy', 'tokenHash', 'expiresAt', 'status']);
+    const fields = Object.keys(error?.errors || {}).filter(field => allowedFields.has(field));
+    const reference = `${stage}: ${name}${code}${fields.length ? `; fields ${fields.join(', ')}` : ''}`;
+    this.logger.error(`Invitation request failed (${reference})`);
+    throw new ServiceUnavailableException(`Invitation request failed (${reference}). Refresh invitation history before retrying. Share this reference with your administrator.`);
   }
   async list() {
     return (await this.invitations.find().sort({ createdAt: -1 }).limit(500).lean()).map(item => this.view(item));
@@ -48,6 +60,10 @@ export class InvitationsService {
     return this.view(sent);
   }
   async create(input: { name: string; email: string; siteId: string }, invitedBy: string) {
+    try { return await this.createInvitation(input, invitedBy); }
+    catch (error) { return this.failure(error, 'create-invitation'); }
+  }
+  private async createInvitation(input: { name: string; email: string; siteId: string }, invitedBy: string) {
     const email = input.email.trim().toLowerCase();
     await this.noAccount(email);
     const site = await this.activeSite(input.siteId);
