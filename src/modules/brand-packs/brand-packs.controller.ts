@@ -1,12 +1,22 @@
-import { Controller, Get, Post, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Headers, ForbiddenException } from '@nestjs/common';
+import { AuthService } from '../auth/auth.service';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { BrandPacksService, EvaluateRulesDto, EvaluatedRulesResponseDto, CreateEvidenceRuleDto } from './brand-packs.service';
 import { BrandPack } from '../../schemas/brand-pack.schema';
+import { CreateBrandPackDto } from './brand-packs.service';
 
 @ApiTags('Brand Packs & Rules Engine')
 @Controller('brand-packs')
 export class BrandPacksController {
-  constructor(private readonly brandPacksService: BrandPacksService) {}
+  constructor(private readonly brandPacksService: BrandPacksService, private readonly authService: AuthService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Create a draft brand pack' })
+  async create(@Body() dto: CreateBrandPackDto, @Headers('authorization') authorization?: string): Promise<BrandPack> {
+    const user = await this.authService.resolveUserFromAuthorization(authorization);
+    if (String(user.role).toUpperCase() !== 'ADMIN') throw new ForbiddenException('Only administrators can create brand packs');
+    return this.brandPacksService.create(dto);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List all Brand Pack configurations and version history' })

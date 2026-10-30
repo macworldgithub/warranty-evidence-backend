@@ -1,10 +1,28 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { Brand, BrandDocument } from '../../schemas/brand.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsBoolean, IsEnum, IsOptional, IsArray, IsNumber } from 'class-validator';
 import { FaultCategory, RepairStage } from '../../common/enums';
 import { BrandPack, BrandPackDocument } from '../../schemas/brand-pack.schema';
+
+export class CreateBrandPackDto {
+  @IsString()
+  brandId: string;
+
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(['blank', 'common'])
+  template?: string;
+}
 
 export class EvaluateRulesDto {
   @ApiProperty({ example: 'brand_byd' })
@@ -122,6 +140,7 @@ export class BatchCreateRulesDto {
 export class BrandPacksService implements OnModuleInit {
   constructor(
     @InjectModel(BrandPack.name) private packModel: Model<BrandPackDocument>,
+    @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
   ) {}
 
   async onModuleInit() {
@@ -420,6 +439,27 @@ export class BrandPacksService implements OnModuleInit {
     };
   }
 
+  async create(dto: CreateBrandPackDto): Promise<BrandPack> {
+    if (!dto.brandId?.trim() || !dto.name?.trim()) {
+      throw new BadRequestException('Brand and pack name are required');
+    }
+    const brand = await this.brandModel.findOne({ id: dto.brandId, isActive: true }).lean();
+    if (!brand) throw new BadRequestException('Select an active OEM brand');
+    const existing = await this.packModel.findOne({ brandId: brand.id }).sort({ version: -1 }).lean();
+    let rules: BrandPack['rules'] = [];
+    if (dto.template === 'common') {
+      const common = await this.packModel.findOne({ id: 'brandpack_common_v1' }).lean();
+      if (!common) throw new BadRequestException('Common template is unavailable. Choose a blank checklist.');
+      rules = common.rules;
+    }
+    const pack = new this.packModel({
+      id: `brandpack_${randomUUID()}`, brandId: brand.id, brandName: brand.name,
+      version: (existing?.version ?? 0) + 1, status: 'DRAFT',
+      name: dto.name.trim(), description: dto.description?.trim() || `${brand.name} warranty requirements`, rules,
+    });
+    return (await pack.save()).toObject();
+  }
+
   async cloneVersion(id: string): Promise<BrandPack> {
     const source = await this.findOne(id);
     const newVersion = source.version + 1;
@@ -443,12 +483,9 @@ export class BrandPacksService implements OnModuleInit {
   async publish(id: string): Promise<BrandPack> {
     const pack = await this.packModel.findOne({ id });
     if (!pack) throw new NotFoundException(`Brand pack with id ${id} not found`);
-
-    // Archive current published pack for this brand
-    await this.packModel.updateMany(
-      { brandId: pack.brandId, status: 'PUBLISHED' },
-      { $set: { status: 'ARCHIVED' } },
-    );
+    if (pack.status !== 'DRAFT') throw new BadRequestException('Only draft packs can be published');
+    if (!pack.rules.length) throw new BadRequestException('Add at least one evidence rule before publishing');
+    await pack.validate();
 
     const baseName = pack.name.replace(/\s*\((?:Draft|Live)\s*v\d+\)/gi, '').trim();
     pack.name = `${baseName} (Live v${pack.version})`;
@@ -456,7 +493,13 @@ export class BrandPacksService implements OnModuleInit {
     pack.publishedAt = new Date().toISOString();
     pack.publishedBy = 'Sarah Jenkins (Warranty Clerk)';
 
-    return (await pack.save()).toObject();
+    const saved = await pack.save();
+    await this.brandModel.updateOne({ id: pack.brandId }, { $set: { activeBrandPackId: pack.id } });
+    await this.packModel.updateMany(
+      { brandId: pack.brandId, status: 'PUBLISHED', id: { $ne: pack.id } },
+      { $set: { status: 'ARCHIVED' } },
+    );
+    return saved.toObject();
   }
 
   async addRule(packId: string, ruleDto: CreateEvidenceRuleDto): Promise<BrandPack> {
