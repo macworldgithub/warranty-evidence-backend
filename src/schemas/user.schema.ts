@@ -38,12 +38,13 @@ export class User {
       {
         token: { type: String, required: true },
         platform: { type: String, enum: ['android', 'ios', 'web'], default: 'android' },
+          firebaseProjectId: { type: String },
         updatedAt: { type: Date, default: Date.now },
       },
     ],
     default: [],
   })
-  fcmTokens: { token: string; platform: 'android' | 'ios' | 'web'; updatedAt: Date }[];
+  fcmTokens: { token: string; platform: 'android' | 'ios' | 'web'; firebaseProjectId?: string; updatedAt: Date }[];
 
   @Prop({ type: String, enum: ['ON_SITE', 'OFF_SITE'], default: 'ON_SITE' })
   presenceStatus?: 'ON_SITE' | 'OFF_SITE';

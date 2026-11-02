@@ -94,6 +94,13 @@ export class NotificationsService implements OnModuleInit {
   private isSmtpConfigured = false;
   private firebaseApp: App | null = null;
   private isFcmConfigured = false;
+  private iosFirebaseApp: App | null = null;
+
+  private projectId(platform: string): string {
+    return platform === 'ios'
+      ? process.env.FIREBASE_IOS_PROJECT_ID || 'booranwarranty-41945'
+      : process.env.FIREBASE_PROJECT_ID || 'booranwarranty-b8a0a';
+  }
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
@@ -165,6 +172,22 @@ export class NotificationsService implements OnModuleInit {
     } catch (err: any) {
       this.logger.error(`[FCM] Failed to initialize Firebase Cloud Messaging: ${err.message}`);
     }
+    this.initializeIosFirebase();
+  }
+
+  private initializeIosFirebase() {
+    try {
+      const filename = process.env.FIREBASE_IOS_SERVICE_ACCOUNT_PATH;
+      if (!filename) return;
+      const account = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), filename), 'utf8'));
+      if (account.project_id !== this.projectId('ios')) throw new Error('iOS Firebase project does not match credential project');
+      this.iosFirebaseApp = getApps().find(app => app.name === 'warranty-ios') || initializeApp({
+        credential: cert(account), projectId: account.project_id,
+      }, 'warranty-ios');
+      this.logger.log(`[FCM] iOS connection initialized for ${account.project_id}`);
+    } catch {
+      this.logger.error('[FCM] iOS initialization failed. Check iOS credential path and project ID.');
+    }
   }
 
   getStatus() {
@@ -179,6 +202,8 @@ export class NotificationsService implements OnModuleInit {
         projectId: process.env.FIREBASE_PROJECT_ID || 'booranwarranty-b8a0a',
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         appsActive: getApps().length,
+        android: { configured: !!this.firebaseApp, projectId: this.projectId('android') },
+        ios: { configured: !!this.iosFirebaseApp, projectId: this.projectId('ios') },
       },
     };
   }
@@ -202,6 +227,7 @@ export class NotificationsService implements OnModuleInit {
             fcmTokens: {
               token,
               platform,
+              firebaseProjectId: this.projectId(platform),
               updatedAt: new Date(),
             },
           },
@@ -224,6 +250,18 @@ export class NotificationsService implements OnModuleInit {
     this.logger.log(`[FCM] Unregistering device token...`);
     try {
       const query = userId ? { id: userId } : { 'fcmTokens.token': token };
+      const owners = await this.userModel.find({ ...query, 'fcmTokens.token': token }).lean();
+      for (const owner of owners) {
+        const device = owner.fcmTokens.find(entry => entry.token === token);
+        const project = device?.firebaseProjectId || this.projectId('android');
+        const app = project === this.projectId('ios') ? this.iosFirebaseApp : this.firebaseApp;
+        if (app) {
+          for (const topic of ['warranty-all', 'warranty-techs', 'warranty-admins', `tech-${owner.id}`]) {
+            try { await getMessaging(app).unsubscribeFromTopic([token], topic); }
+            catch { this.logger.warn('[FCM] Topic cleanup failed; device association will still be removed'); }
+          }
+        }
+      }
       await this.userModel.updateMany(query, {
         $pull: { fcmTokens: { token } },
       });
@@ -263,19 +301,55 @@ export class NotificationsService implements OnModuleInit {
   // ─── FCM Push Dispatcher ────────────────────────────────────────────────
 
   async sendPushNotification(options: {
+    tokens?: string[]; topic?: string; title: string; body: string;
+    data?: Record<string, string>; dryRun?: boolean; platform?: 'android' | 'ios' | 'web';
+  }) {
+    const groups = new Map<string, string[]>();
+    if (options.tokens?.length) {
+      const users = await this.userModel.find({ 'fcmTokens.token': { $in: options.tokens } }).lean();
+      const registrations = new Map(users.flatMap(user => user.fcmTokens || []).map(device => [device.token, device]));
+      for (const token of new Set(options.tokens)) {
+        const device = registrations.get(token);
+        // Legacy registrations without project metadata belonged to the original project.
+        const project = device ? device.firebaseProjectId || this.projectId('android') : this.projectId(options.platform || 'android');
+        groups.set(project, [...(groups.get(project) || []), token]);
+      }
+    }
+    if (options.topic) {
+      const projects = options.platform ? [this.projectId(options.platform)] : [this.projectId('android'), this.projectId('ios')];
+      projects.forEach(project => { if (!groups.has(project)) groups.set(project, []); });
+    }
+    const projects: Record<string, any> = {};
+    for (const [project, tokens] of groups) {
+      const app = project === this.projectId('android') ? this.firebaseApp : project === this.projectId('ios') ? this.iosFirebaseApp : null;
+      if (!app) { projects[project] = { success: false, reason: 'FCM_NOT_CONFIGURED' }; continue; }
+      projects[project] = await this.sendProjectPush({ ...options, tokens }, app);
+    }
+    const values = Object.values(projects);
+    return { success: values.length > 0 && values.every(result => result.success), projects };
+  }
+
+  private async sendProjectPush(options: {
     tokens?: string[];
     topic?: string;
     title: string;
     body: string;
     data?: Record<string, string>;
     dryRun?: boolean;
-  }) {
-    if (!this.isFcmConfigured || !this.firebaseApp) {
+  }, app: App) {
+    if (options.tokens && options.tokens.length > 500) {
+      const batches: any[] = [];
+      for (let offset = 0; offset < options.tokens.length; offset += 500) {
+        batches.push(await this.sendProjectPush({ ...options, topic: offset === 0 ? options.topic : undefined, tokens: options.tokens.slice(offset, offset + 500) }, app));
+      }
+      return { success: batches.every(batch => batch.success), batches };
+    }
+    if (!app) {
       this.logger.warn(`[FCM] Not configured; push notification logged: "${options.title}" - "${options.body}"`);
       return { success: false, reason: 'FCM_NOT_CONFIGURED' };
     }
 
-    const messaging = getMessaging(this.firebaseApp);
+    const messaging = getMessaging(app);
     const results: any = {};
 
     const baseMessage: any = {
@@ -340,7 +414,7 @@ export class NotificationsService implements OnModuleInit {
 
         // Clean up invalid tokens automatically
         if (response.failureCount > 0 && !options.dryRun) {
-          response.responses.forEach(async (resp, idx) => {
+          await Promise.all(response.responses.map(async (resp, idx) => {
             if (!resp.success) {
               const errCode = resp.error?.code;
               if (
@@ -348,11 +422,11 @@ export class NotificationsService implements OnModuleInit {
                 errCode === 'messaging/registration-token-not-registered'
               ) {
                 const badToken = options.tokens![idx];
-                this.logger.warn(`[FCM] Removing invalid token: ${badToken}`);
+                this.logger.warn('[FCM] Removing invalid device token');
                 await this.unregisterDeviceToken(badToken);
               }
             }
-          });
+          }));
         }
       } catch (err: any) {
         this.logger.error(`[FCM] Failed sending multicast push: ${err.message}`);
@@ -360,10 +434,11 @@ export class NotificationsService implements OnModuleInit {
       }
     }
 
-    return { success: true, ...results };
+    return { ...results, success: (!results.topic || results.topic.success) && (!results.tokens || (results.tokens.success !== false && results.tokens.failureCount === 0)) };
   }
 
   async sendTestPushNotification(dto: {
+    platform?: 'android' | 'ios' | 'web';
     token?: string;
     topic?: string;
     title: string;
@@ -375,6 +450,7 @@ export class NotificationsService implements OnModuleInit {
     const topic = dto.token ? undefined : (dto.topic || 'warranty-admins');
 
     return this.sendPushNotification({
+      platform: dto.platform,
       tokens,
       topic,
       title: dto.title,
@@ -531,7 +607,7 @@ export class NotificationsService implements OnModuleInit {
   }) {
     const adminTokens = await this.getRoleDeviceTokens('ADMIN');
     return this.sendPushNotification({
-      topic: 'warranty-admins',
+
       tokens: adminTokens.length > 0 ? adminTokens : undefined,
       title: `📋 New Warranty Ticket: RO #${caseData.roNumber}`,
       body: `${caseData.technicianName} submitted case for ${caseData.make} ${caseData.model} (${caseData.vin})`,
@@ -550,7 +626,7 @@ export class NotificationsService implements OnModuleInit {
     const techTokens = await this.getUserDeviceTokens(technicianId);
     return this.sendPushNotification({
       tokens: techTokens.length > 0 ? techTokens : undefined,
-      topic: techTokens.length === 0 ? `tech-${technicianId}` : undefined,
+
       title: `✅ Claim Approved: RO #${caseData.roNumber}`,
       body: `Your warranty claim has been approved under OEM Claim #${caseData.claimNumber}. Case file locked.`,
       data: {
@@ -571,7 +647,7 @@ export class NotificationsService implements OnModuleInit {
     const reason = flagData.reasonCode ? flagData.reasonCode.replace(/_/g, ' ') : 'Evidence Rejected';
     return this.sendPushNotification({
       tokens: techTokens.length > 0 ? techTokens : undefined,
-      topic: techTokens.length === 0 ? `tech-${technicianId}` : undefined,
+
       title: `⚠️ Action Required: RO #${caseData.roNumber}`,
       body: `${flagData.flaggedBy || 'Reviewer'} flagged ${flagData.evidenceRuleKey} (${reason}). Tap to update evidence.`,
       data: {
@@ -590,7 +666,7 @@ export class NotificationsService implements OnModuleInit {
   ) {
     const adminTokens = await this.getRoleDeviceTokens('ADMIN');
     return this.sendPushNotification({
-      topic: 'warranty-admins',
+
       tokens: adminTokens.length > 0 ? adminTokens : undefined,
       title: `✅ Evidence Updated: RO #${caseData.roNumber}`,
       body: `Technician ${caseData.technicianName} replaced evidence for ${flagData.evidenceRuleKey}. Ready for review.`,

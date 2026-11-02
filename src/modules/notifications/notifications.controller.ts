@@ -48,6 +48,10 @@ export class UnregisterDeviceDto {
 }
 
 export class TestPushDto {
+  @ApiPropertyOptional({ enum: ['android', 'ios', 'web'], description: 'Project for unregistered test tokens or topic tests; defaults to Android for tokens' })
+  @IsOptional()
+  @IsEnum(['android', 'ios', 'web'])
+  platform?: 'android' | 'ios' | 'web';
   @ApiPropertyOptional({
     description: 'Direct FCM Device token to send to. If empty, sends to topic.',
     example: 'fcm_device_token_from_device',
