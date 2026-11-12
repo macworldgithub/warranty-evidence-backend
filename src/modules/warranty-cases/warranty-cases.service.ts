@@ -236,6 +236,7 @@ export class WarrantyCasesService implements OnModuleInit {
         ],
       }).lean();
 
+      if (techUser?.username) return '';
       if (techUser?.email) {
         return techUser.email;
       }
@@ -878,7 +879,7 @@ export class WarrantyCasesService implements OnModuleInit {
   }): Promise<PaginatedResponse<WarrantyCase>> {
     const query: any = {};
 
-    if (filters?.siteIds?.length) query.siteId = { $in: filters.siteIds };
+    if (filters?.siteIds) query.siteId = { $in: filters.siteIds };
     else if (filters?.siteId) query.siteId = filters.siteId;
     if (filters?.brandId) query.brandId = filters.brandId;
     if (filters?.status) query.status = filters.status;

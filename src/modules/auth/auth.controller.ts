@@ -14,12 +14,60 @@ import {
   UserProfileDto,
   CreateUserDto,
   UpdateUserDto,
+  CreateRegistrationQrDto,
+  QrTokenDto,
+  RedeemQrDto,
 } from './auth.service';
 
 @ApiTags('Authentication & Role Access')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('registration-qr')
+  async listRegistrationQrs(@Headers('authorization') authorization?: string) {
+    await this.authService.assertAdmin(authorization);
+    return this.authService.listRegistrationQrs();
+  }
+
+  @Post('registration-qr')
+  async createRegistrationQr(@Body() dto: CreateRegistrationQrDto, @Headers('authorization') authorization?: string) {
+    await this.authService.assertAdmin(authorization);
+    return this.authService.createRegistrationQr(dto);
+  }
+
+  @Delete('registration-qr/:id')
+  async revokeRegistrationQr(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+    await this.authService.assertAdmin(authorization);
+    return this.authService.revokeRegistrationQr(id);
+  }
+
+  @Post('registration-qr/:id/replace')
+  async replaceRegistrationQr(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+    await this.authService.assertAdmin(authorization);
+    return this.authService.replaceRegistrationQr(id);
+  }
+
+  @Post('registration-qr/inspect')
+  inspectRegistrationQr(@Body() dto: QrTokenDto) {
+    return this.authService.inspectRegistrationQr(dto.token);
+  }
+
+  @Post('registration-qr/redeem')
+  redeemRegistrationQr(@Body() dto: RedeemQrDto) {
+    return this.authService.redeemRegistrationQr(dto);
+  }
+
+  @Post('users/:id/reset-qr')
+  async createPasswordResetQr(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+    await this.authService.assertAdmin(authorization);
+    return this.authService.createPasswordResetQr(id);
+  }
+
+  @Post('reset-qr/redeem')
+  redeemPasswordResetQr(@Body() dto: RedeemQrDto) {
+    return this.authService.redeemPasswordResetQr(dto);
+  }
 
   @Post('login')
   @ApiOperation({ summary: 'Sign in to Booran Warranty Portal / Tech App' })

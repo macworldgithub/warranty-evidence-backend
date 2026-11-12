@@ -8,7 +8,48 @@ import { User, UserDocument } from '../../schemas/user.schema';
 import { Otp, OtpDocument } from '../../schemas/otp.schema';
 import { Site, SiteDocument } from '../../schemas/site.schema';
 import { NotificationsService } from '../notifications/notifications.service';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
+
+const derivePassword = promisify(scrypt);
+const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+async function hashQrPassword(password: string) {
+  const salt = randomBytes(16).toString('hex');
+  const key = await derivePassword(password, salt, 64) as Buffer;
+  return `scrypt:${salt}:${key.toString('hex')}`;
+}
+async function passwordMatches(stored: string, password: string) {
+  if (!/^scrypt:[a-f0-9]{32}:[a-f0-9]{128}$/.test(stored)) return stored === password;
+  const [, salt, hash] = stored.split(':');
+  return timingSafeEqual(Buffer.from(hash, 'hex'), await derivePassword(password, salt, 64) as Buffer);
+}
+
+export class CreateRegistrationQrDto {
+  @IsString() name: string;
+  @IsEnum(UserRole) role: UserRole;
+  @IsArray() @IsString({ each: true }) siteIds: string[];
+}
+
+export class QrTokenDto {
+  @IsString() token: string;
+}
+
+export class RedeemQrDto extends QrTokenDto {
+  @IsString() password: string;
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() username?: string;
+}
+
+export interface RegistrationQr {
+  id: string;
+  tokenHash?: string;
+  name: string;
+  role: UserRole;
+  siteIds: string[];
+  expiresAt: Date;
+  createdAt: Date;
+  status: 'PENDING' | 'USED' | 'REVOKED';
+}
 
 function resolveSessionSecret(): string {
   const configuredSecret = process.env.AUTH_TOKEN_SECRET || process.env.JWT_SECRET;
@@ -20,6 +61,8 @@ function resolveSessionSecret(): string {
 }
 
 export class UserProfileDto {
+  @ApiPropertyOptional()
+  username?: string;
   @ApiProperty({ example: 'usr_admin_1' })
   id: string;
 
@@ -40,8 +83,8 @@ export class UserProfileDto {
 }
 
 export class LoginDto {
-  @ApiProperty({ example: 'admin@booran.com.au' })
-  @IsEmail()
+  @ApiProperty({ example: 'admin@booran.com.au', description: 'Email address or staff username' })
+  @IsString()
   email: string;
 
   @ApiProperty({ example: 'Booran2026!' })
@@ -275,9 +318,10 @@ export class AuthService implements OnModuleInit {
     ];
 
     for (const user of defaultUsers) {
+      const { passwordHash, ...profile } = user;
       await this.userModel.updateOne(
         { id: user.id },
-        { $set: user },
+        { $set: profile, $setOnInsert: { passwordHash } },
         { upsert: true },
       );
     }
@@ -290,6 +334,7 @@ export class AuthService implements OnModuleInit {
       id: u.id,
       name: u.name,
       email: u.email,
+      username: u.username,
       role: u.role as UserRole,
       defaultSiteId: u.defaultSiteId,
       authorizedSiteIds: u.authorizedSiteIds,
@@ -397,13 +442,14 @@ export class AuthService implements OnModuleInit {
       user.authorizedSiteIds = requestedSites;
     }
     user.defaultSiteId = nextDefaultSiteId || user.authorizedSiteIds[0] || 'site_cranbourne_byd';
-    if (dto.password) user.passwordHash = dto.password;
+    if (dto.password) user.passwordHash = user.username ? await hashQrPassword(dto.password) : dto.password;
 
     const saved = await user.save();
     return {
       id: saved.id,
       name: saved.name,
       email: saved.email,
+      username: saved.username,
       role: saved.role as UserRole,
       defaultSiteId: saved.defaultSiteId,
       authorizedSiteIds: saved.authorizedSiteIds,
@@ -411,17 +457,20 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(dto: LoginDto): Promise<LoginResponseDto> {
-    if (!dto.email || !dto.password) {
-      throw new BadRequestException('Email and password are required.');
+    if (!dto.email?.trim() || !dto.password || dto.password.length > 1024) {
+      throw new BadRequestException('Username or email and a valid password are required.');
     }
 
-    const userByEmail = await this.userModel.findOne({ email: dto.email.toLowerCase().trim() }).lean();
+    const identifier = dto.email.toLowerCase().trim();
+    const userByEmail = await this.userModel.findOne(identifier.includes('@')
+      ? { email: identifier, username: { $exists: false } }
+      : { username: identifier }).lean();
 
     if (!userByEmail) {
-      throw new UnauthorizedException('No account found with this email address.');
+      throw new UnauthorizedException('Incorrect username, email, or password.');
     }
 
-    if (userByEmail.passwordHash !== dto.password) {
+    if (!(await passwordMatches(userByEmail.passwordHash, dto.password))) {
       throw new UnauthorizedException('Incorrect password. Please try again.');
     }
 
@@ -439,13 +488,14 @@ export class AuthService implements OnModuleInit {
       id: userByEmail.id,
       name: userByEmail.name,
       email: userByEmail.email,
+      username: userByEmail.username,
       role: userByEmail.role as UserRole,
       defaultSiteId: userByEmail.defaultSiteId || 'site_cranbourne_byd',
       authorizedSiteIds: userByEmail.authorizedSiteIds || ['site_cranbourne_byd'],
     };
 
     return {
-      accessToken: this.issueAccessToken(userByEmail.id),
+      accessToken: this.issueAccessToken(userByEmail.id, userByEmail.sessionVersion),
       user: profile,
     };
   }
@@ -591,6 +641,9 @@ export class AuthService implements OnModuleInit {
     }
 
     const email = dto.email.toLowerCase().trim();
+    if (email.endsWith('@staff.booran.invalid')) {
+      throw new BadRequestException('Ask your administrator for a password reset QR.');
+    }
     const existing = await this.userModel.findOne({ email, isActive: true }).lean();
     if (!existing) {
       throw new BadRequestException('No active account found with this email address.');
@@ -651,6 +704,9 @@ export class AuthService implements OnModuleInit {
     }
 
     const email = dto.email.toLowerCase().trim();
+    if (email.endsWith('@staff.booran.invalid')) {
+      throw new BadRequestException('Ask your administrator for a password reset QR.');
+    }
     const otpRecord = await this.otpModel.findOne({
       email,
       purpose: 'PASSWORD_RESET',
@@ -678,19 +734,142 @@ export class AuthService implements OnModuleInit {
     };
   }
 
-  async getMe(userId: string): Promise<UserProfileDto> {
+  async getMe(userId: string, sessionVersion?: number): Promise<UserProfileDto> {
     const user = await this.userModel.findOne({ id: userId, isActive: true }).lean();
     if (!user) {
       throw new UnauthorizedException('User session not found');
+    }
+    if (sessionVersion !== undefined && sessionVersion !== (user.sessionVersion ?? 0)) {
+      throw new UnauthorizedException('Your password has changed. Please sign in again.');
     }
     return {
       id: user.id,
       name: user.name,
       email: user.email,
+      username: user.username,
       role: user.role as UserRole,
       defaultSiteId: user.defaultSiteId,
       authorizedSiteIds: user.authorizedSiteIds,
     };
+  }
+
+  private get registrationQrs() {
+    return this.userModel.db.collection<RegistrationQr>('staff_registration_qrs');
+  }
+
+  async listRegistrationQrs() {
+    return this.registrationQrs.find({}, { projection: { _id: 0, tokenHash: 0 } })
+      .sort({ createdAt: -1 }).limit(500).toArray();
+  }
+
+  async createRegistrationQr(dto: CreateRegistrationQrDto) {
+    const name = dto.name.trim();
+    const siteIds = [...new Set(dto.siteIds.map(id => id.trim()))];
+    if (!name || name.length > 150 || !siteIds.length || siteIds.length > 50 ||
+        ![UserRole.TECHNICIAN, UserRole.CLERK].includes(dto.role)) {
+      throw new BadRequestException('Enter a staff name, a technician or clerk role, and at least one dealership.');
+    }
+    await this.assertSitesAreActive(siteIds);
+    const id = randomUUID();
+    const token = `${id}.${randomBytes(32).toString('base64url')}`;
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await this.registrationQrs.insertOne({
+      id, tokenHash: hashToken(token), name, role: dto.role, siteIds,
+      expiresAt, createdAt: new Date(), status: 'PENDING',
+    });
+    return { id, token, expiresAt };
+  }
+
+  async revokeRegistrationQr(id: string) {
+    const result = await this.registrationQrs.updateOne({ id, status: 'PENDING' }, {
+      $set: { status: 'REVOKED' }, $unset: { tokenHash: '' },
+    });
+    if (!result.matchedCount) throw new BadRequestException('This invitation is no longer pending.');
+    return { success: true };
+  }
+
+  async replaceRegistrationQr(id: string) {
+    const token = `${id}.${randomBytes(32).toString('base64url')}`;
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const result = await this.registrationQrs.updateOne({ id, status: 'PENDING' }, {
+      $set: { tokenHash: hashToken(token), expiresAt },
+    });
+    if (!result.matchedCount) throw new BadRequestException('This invitation is no longer pending.');
+    return { id, token, expiresAt };
+  }
+
+  private pendingRegistration(token: string) {
+    return { id: token.split('.')[0], tokenHash: hashToken(token), status: 'PENDING' as const, expiresAt: { $gt: new Date() } };
+  }
+
+  async inspectRegistrationQr(token: string) {
+    const invite = await this.registrationQrs.findOne(this.pendingRegistration(token));
+    if (!invite) throw new BadRequestException('This registration link is invalid, expired, or already used.');
+    const sites = await this.siteModel.find({ id: { $in: invite.siteIds } }).lean();
+    return { name: invite.name, role: invite.role, sites: sites.map(site => site.name), expiresAt: invite.expiresAt };
+  }
+
+  async redeemRegistrationQr(dto: RedeemQrDto) {
+    const name = dto.name?.trim();
+    const username = dto.username?.trim().toLowerCase();
+    if (!name || name.length > 150 || !username || !/^[a-z0-9][a-z0-9_.-]{2,39}$/.test(username)) {
+      throw new BadRequestException('Enter a name and a username of 3–40 letters, digits, dots, underscores, or hyphens.');
+    }
+    const invite = await this.registrationQrs.findOne(this.pendingRegistration(dto.token));
+    if (!invite) throw new BadRequestException('This registration link is invalid, expired, or already used.');
+    await this.assertSitesAreActive(invite.siteIds);
+    const passwordHash = await this.prepareQrPassword(dto.password);
+    try {
+      await this.userModel.db.transaction(async session => {
+        const consumed = await this.registrationQrs.updateOne(this.pendingRegistration(dto.token), {
+          $set: { status: 'USED' }, $unset: { tokenHash: '' },
+        }, { session });
+        if (!consumed.matchedCount) throw new BadRequestException('This registration link is invalid, expired, or already used.');
+        await this.userModel.create([{
+          id: `usr_${randomUUID()}`, name, username,
+          email: `${username}@staff.booran.invalid`, passwordHash, role: invite.role,
+          defaultSiteId: invite.siteIds[0], authorizedSiteIds: invite.siteIds, isActive: true,
+        }], { session });
+      });
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        throw new BadRequestException('That username is already taken.');
+      }
+      throw error;
+    }
+    return { success: true };
+  }
+
+  async createPasswordResetQr(id: string) {
+    const token = `${id}.${randomBytes(32).toString('base64url')}`;
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const result = await this.userModel.updateOne({
+      id, isActive: true, role: { $in: [UserRole.TECHNICIAN, UserRole.CLERK] },
+    }, { $set: { resetQrHash: hashToken(token), resetQrExpiresAt: expiresAt } });
+    if (!result.matchedCount) throw new NotFoundException('Active technician or clerk account not found.');
+    return { token, expiresAt };
+  }
+
+  async redeemPasswordResetQr(dto: RedeemQrDto) {
+    const filter = {
+      id: dto.token.split('.')[0], isActive: true, resetQrHash: hashToken(dto.token),
+      role: { $in: [UserRole.TECHNICIAN, UserRole.CLERK] },
+    };
+    const unavailable = () => new BadRequestException('This reset link is invalid, expired, or already used.');
+    if (!await this.userModel.exists({ ...filter, resetQrExpiresAt: { $gt: new Date() } })) throw unavailable();
+    const passwordHash = await this.prepareQrPassword(dto.password);
+    const result = await this.userModel.updateOne({ ...filter, resetQrExpiresAt: { $gt: new Date() } }, {
+      $set: { passwordHash }, $inc: { sessionVersion: 1 }, $unset: { resetQrHash: '', resetQrExpiresAt: '' },
+    });
+    if (!result.matchedCount) throw unavailable();
+    return { success: true };
+  }
+
+  private prepareQrPassword(password: string) {
+    if (password.length < 10 || password.length > 128) {
+      throw new BadRequestException('Password must be 10–128 characters.');
+    }
+    return hashQrPassword(password);
   }
 
   async resolveUserFromAuthorization(
@@ -701,20 +880,21 @@ export class AuthService implements OnModuleInit {
     if (!token) {
       throw new UnauthorizedException('A valid user session is required.');
     }
-    const userId = this.verifyAccessToken(token);
-    return this.getMe(userId);
+    const claims = this.verifyAccessToken(token);
+    return this.getMe(claims.sub, claims.sessionVersion ?? 0);
   }
 
-  private issueAccessToken(userId: string): string {
+  private issueAccessToken(userId: string, sessionVersion = 0): string {
     const payload = Buffer.from(JSON.stringify({
       sub: userId,
+      sessionVersion,
       exp: Date.now() + 8 * 60 * 60 * 1000,
     })).toString('base64url');
     const signature = createHmac('sha256', this.sessionSecret).update(payload).digest('base64url');
     return `session_v1.${payload}.${signature}`;
   }
 
-  private verifyAccessToken(token: string): string {
+  private verifyAccessToken(token: string): { sub: string; sessionVersion?: number } {
     const [version, payload, providedSignature] = token.split('.');
     if (version !== 'session_v1' || !payload || !providedSignature) {
       throw new UnauthorizedException('Your session is invalid. Please sign in again.');
@@ -731,11 +911,12 @@ export class AuthService implements OnModuleInit {
       const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
         sub?: string;
         exp?: number;
+        sessionVersion?: number;
       };
       if (!claims.sub || !claims.exp || claims.exp <= Date.now()) {
         throw new Error('expired');
       }
-      return claims.sub;
+      return { sub: claims.sub, sessionVersion: claims.sessionVersion };
     } catch {
       throw new UnauthorizedException('Your session has expired. Please sign in again.');
     }

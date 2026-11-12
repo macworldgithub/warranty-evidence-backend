@@ -14,6 +14,18 @@ export class User {
   @Prop({ required: true, unique: true })
   email: string;
 
+  @Prop({ unique: true, sparse: true })
+  username?: string;
+
+  @Prop()
+  sessionVersion?: number;
+
+  @Prop()
+  resetQrHash?: string;
+
+  @Prop()
+  resetQrExpiresAt?: Date;
+
   @Prop({ required: true })
   passwordHash: string;
 

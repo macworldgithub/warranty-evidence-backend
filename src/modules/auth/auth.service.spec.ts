@@ -106,4 +106,52 @@ describe('AuthService session and clerk access rules', () => {
       authorizedSiteIds: ['site_a'],
     });
   });
+
+  it('creates an invited username account and lets it sign in with mixed case', async () => {
+    const invitation = { role: UserRole.CLERK, siteIds: ['site_a', 'site_b'] };
+    let saved: any;
+    const collection = {
+      findOne: jest.fn().mockResolvedValue(invitation),
+      updateOne: jest.fn().mockResolvedValueOnce({ matchedCount: 1 }).mockResolvedValueOnce({ matchedCount: 0 }),
+    };
+    const session = {};
+    const model = {
+      db: { collection: () => collection, transaction: async (run: (value: object) => Promise<void>) => run(session) },
+      create: jest.fn(async ([account]) => { saved = account; }),
+      findOne: jest.fn((query) => ({ lean: async () => query.username === saved?.username ? saved : null })),
+    };
+    const sites = { countDocuments: jest.fn().mockResolvedValue(2) };
+    const service = new AuthService(model as never, {} as never, sites as never, {} as never);
+    const dto = { name: 'Clerk Example', username: 'Clerk.Example', password: 'test-passphrase', token: 'test.invite' };
+    await service.redeemRegistrationQr(dto);
+    expect(saved).toMatchObject({ username: 'clerk.example', role: UserRole.CLERK, authorizedSiteIds: invitation.siteIds });
+    expect(saved.passwordHash).toMatch(/^scrypt:/);
+    expect(model.create).toHaveBeenCalledWith([saved], { session });
+    await expect(service.login({ email: 'CLERK.EXAMPLE', password: dto.password })).resolves.toMatchObject({
+      user: { username: 'clerk.example', role: UserRole.CLERK },
+    });
+    await expect(service.login({ email: 'clerk.example', password: 'wrong' })).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.redeemRegistrationQr(dto)).rejects.toBeInstanceOf(BadRequestException);
+    expect(model.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets a staff password once and invalidates the existing session', async () => {
+    const account = { ...activeAdmin, role: UserRole.TECHNICIAN, username: 'tech-example', sessionVersion: 0 };
+    const model = {
+      findOne: jest.fn(() => ({ lean: async () => account })),
+      exists: jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+      updateOne: jest.fn(async (_filter, update) => {
+        account.passwordHash = update.$set.passwordHash;
+        account.sessionVersion += update.$inc.sessionVersion;
+        return { matchedCount: 1 };
+      }),
+    };
+    const service = new AuthService(model as never, {} as never, {} as never, {} as never);
+    const { accessToken } = await service.login({ email: account.username, password: account.passwordHash });
+    const dto = { token: `${account.id}.test`, password: 'new-passphrase' };
+    await service.redeemPasswordResetQr(dto);
+    await expect(service.resolveUserFromAuthorization(`Bearer ${accessToken}`)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.login({ email: account.username, password: dto.password })).resolves.toMatchObject({ user: { id: account.id } });
+    await expect(service.redeemPasswordResetQr(dto)).rejects.toBeInstanceOf(BadRequestException);
+  });
 });

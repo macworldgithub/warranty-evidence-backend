@@ -19,13 +19,14 @@ export class DashboardController {
 
   private async getSiteScope(authorization?: string, userId?: string, siteId?: string): Promise<string[] | undefined> {
     const user = await this.authService.resolveUserFromAuthorization(authorization, userId);
+    const assignedSites = user.authorizedSiteIds ?? [];
     if (siteId) {
-      if (user.role === UserRole.CLERK && !user.authorizedSiteIds.includes(siteId)) {
+      if (user.role === UserRole.CLERK && !assignedSites.includes(siteId)) {
         throw new ForbiddenException(`Access denied: You are not assigned to site '${siteId}'.`);
       }
       return [siteId];
     }
-    return user.role === UserRole.CLERK ? user.authorizedSiteIds : undefined;
+    return user.role === UserRole.CLERK ? assignedSites : undefined;
   }
 
   @Get('kpis')

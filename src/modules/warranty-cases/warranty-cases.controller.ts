@@ -25,12 +25,12 @@ export class WarrantyCasesController {
 
   private assertSiteAccess(user: UserProfileDto, siteId: string) {
     if (user.role === UserRole.ADMIN) return;
-    if (user.role === UserRole.CLERK && user.authorizedSiteIds.includes(siteId)) return;
+    if (user.role === UserRole.CLERK && (user.authorizedSiteIds ?? []).includes(siteId)) return;
     throw new ForbiddenException(`Access denied: You are not assigned to site '${siteId}'.`);
   }
 
   private async assertCaseAccess(user: UserProfileDto, caseId: string): Promise<WarrantyCase> {
-    const warrantyCase = await this.casesService.findOne(caseId, user.role, user.id, user.name);
+    const warrantyCase = await this.casesService.findOne(caseId, user.role, user.id, user.username ? undefined : user.name);
     if (user.role === UserRole.CLERK) this.assertSiteAccess(user, warrantyCase.siteId);
     return warrantyCase;
   }
@@ -80,10 +80,10 @@ export class WarrantyCasesController {
 
     if (currentUser.role === UserRole.TECHNICIAN) {
       activeTechId = currentUser.id;
-      activeTechName = currentUser.name;
+      activeTechName = currentUser.username ? undefined : currentUser.name;
     } else if (currentUser.role === UserRole.CLERK) {
       if (siteId) this.assertSiteAccess(currentUser, siteId);
-      authorizedSiteIds = siteId ? [siteId] : currentUser.authorizedSiteIds;
+      authorizedSiteIds = siteId ? [siteId] : (currentUser.authorizedSiteIds ?? []);
     }
 
     return this.casesService.findAll({
@@ -117,7 +117,7 @@ export class WarrantyCasesController {
       id,
       currentUser.role,
       currentUser.id,
-      currentUser.name,
+      currentUser.username ? undefined : currentUser.name,
     );
     if (currentUser.role === UserRole.CLERK) this.assertSiteAccess(currentUser, warrantyCase.siteId);
     return warrantyCase;

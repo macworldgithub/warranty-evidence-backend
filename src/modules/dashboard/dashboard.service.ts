@@ -116,13 +116,16 @@ export class DashboardService {
    * Computes live KPIs from actual MongoDB warranty case documents.
    */
   async getKpis(siteIds?: string[]): Promise<DashboardKpisDto> {
-    const caseQuery = siteIds?.length ? { siteId: { $in: siteIds } } : {};
-    const siteQuery = siteIds?.length ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
+    const caseQuery = siteIds ? { siteId: { $in: siteIds } } : {};
+    const siteQuery = siteIds ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
+    const brandQuery = siteIds
+      ? { id: { $in: await this.siteModel.distinct('authorizedBrandIds', siteQuery) }, isActive: true }
+      : { isActive: true };
     const [totalCases, flaggedCases, sitesCount, brandsCount, submittedCases] = await Promise.all([
       this.caseModel.countDocuments(caseQuery),
       this.caseModel.countDocuments({ ...caseQuery, status: 'Flagged' }),
       this.siteModel.countDocuments(siteQuery),
-      this.brandModel.countDocuments({ isActive: true }),
+      this.brandModel.countDocuments(brandQuery),
       this.caseModel.find({ ...caseQuery, status: 'Submitted' }).select('createdAt updatedAt').lean(),
     ]);
 
@@ -140,19 +143,19 @@ export class DashboardService {
 
     const submittedSameDayPercent = submittedCases.length > 0
       ? Number(((sameDayCount / submittedCases.length) * 100).toFixed(1))
-      : 92.5;
+      : 0;
 
     const avgWorkshopToSubmittedHours = submittedCases.length > 0
       ? Number((totalVelocityHours / submittedCases.length).toFixed(1))
-      : 2.9;
+      : 0;
 
     return {
       totalCasesOpened: totalCases,
       submittedSameDayPercent,
       activeFlaggedCases: flaggedCases,
       avgWorkshopToSubmittedHours,
-      activeRooftopsCount: sitesCount || 4,
-      activeBrandsCount: brandsCount || 8,
+      activeRooftopsCount: sitesCount,
+      activeBrandsCount: brandsCount,
     };
   }
 
@@ -161,7 +164,7 @@ export class DashboardService {
    */
   async getFlagReasonStats(siteIds?: string[]): Promise<FlagReasonStatDto[]> {
     const aggregationStages: any[] = [];
-    if (siteIds?.length) aggregationStages.push({ $match: { siteId: { $in: siteIds } } });
+    if (siteIds) aggregationStages.push({ $match: { siteId: { $in: siteIds } } });
     aggregationStages.push(
       { $unwind: '$flagHistory' },
       {
@@ -189,15 +192,7 @@ export class DashboardService {
       });
     }
 
-    // Fallback standard baseline if database has 0 flagged history records
-    return [
-      {
-        reasonCode: FlagReasonCode.POOR_LIGHTING_BLUR,
-        label: FLAG_REASON_LABELS[FlagReasonCode.POOR_LIGHTING_BLUR],
-        count: 0,
-        percentage: 0,
-      },
-    ];
+    return [];
   }
 
   /**
@@ -211,7 +206,7 @@ export class DashboardService {
     const limit = Math.max(1, Math.min(100, Number(options?.limit) || 10));
     const search = (options?.search || '').trim();
 
-    const siteQuery: any = siteIds?.length ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
+    const siteQuery: any = siteIds ? { id: { $in: siteIds }, isActive: true } : { isActive: true };
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
@@ -241,7 +236,7 @@ export class DashboardService {
         this.caseModel.find({ siteId: site.id, status: 'Submitted' }).select('createdAt updatedAt').lean(),
       ]);
 
-      let avgHours = 2.8;
+      let avgHours = 0;
       if (submittedCases.length > 0) {
         const totalHours = submittedCases.reduce((sum, c) => {
           const caseAny = c as any;
@@ -254,7 +249,7 @@ export class DashboardService {
 
       const firstTimePassRate = totalCases > 0
         ? Number(((unflaggedCount / totalCases) * 100).toFixed(1))
-        : 100.0;
+        : 0;
 
       results.push({
         siteId: site.id,
