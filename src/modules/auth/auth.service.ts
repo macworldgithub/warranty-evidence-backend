@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -97,7 +97,12 @@ export class LoginDto {
   role?: UserRole;
 }
 
-export class SignupDto {
+export class WorkshopPinDto {
+  @IsString()
+  workshopPin: string;
+}
+
+export class SignupDto extends WorkshopPinDto {
   @ApiProperty({ example: 'David Miller' })
   @IsString()
   name: string;
@@ -516,7 +521,18 @@ export class AuthService implements OnModuleInit {
     };
   }
 
+  async verifyWorkshopPin(pin: string): Promise<void> {
+    const configuredHash = process.env.WORKSHOP_PIN_HASH;
+    if (!configuredHash || !/^scrypt:[a-f0-9]{32}:[a-f0-9]{128}$/.test(configuredHash)) {
+      throw new ServiceUnavailableException('Workshop registration is unavailable.');
+    }
+    if (!/^\d{4}$/.test(pin) || !(await passwordMatches(configuredHash, pin))) {
+      throw new UnauthorizedException('Incorrect workshop PIN. Please try again.');
+    }
+  }
+
   async signup(dto: SignupDto): Promise<LoginResponseDto> {
+    await this.verifyWorkshopPin(dto.workshopPin);
     const existing = await this.userModel.findOne({ email: dto.email.toLowerCase().trim() }).lean();
     if (existing) {
       throw new BadRequestException('An account with this email address already exists.');

@@ -1,9 +1,10 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, Headers, Ip, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   AuthService,
   LoginDto,
   SignupDto,
+  WorkshopPinDto,
   SendRegistrationOtpDto,
   VerifyRegistrationOtpDto,
   ForgotPasswordDto,
@@ -76,18 +77,41 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  private readonly pinAttempts = new Map<string, number>();
+  private pinWindowEndsAt = 0;
+
+  private async limitPinAttempts<T>(ip: string, action: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    if (now >= this.pinWindowEndsAt) {
+      this.pinAttempts.clear();
+      this.pinWindowEndsAt = now + 5 * 60 * 1000;
+    }
+    const attempts = this.pinAttempts.get(ip) ?? 0;
+    if (attempts >= 5) {
+      throw new HttpException('Too many PIN attempts. Please try again in a few minutes.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    this.pinAttempts.set(ip, attempts + 1);
+    return action();
+  }
+
+  @Post('verify-workshop-pin')
+  async verifyWorkshopPin(@Body() dto: WorkshopPinDto, @Ip() ip: string) {
+    await this.limitPinAttempts(ip, () => this.authService.verifyWorkshopPin(dto.workshopPin));
+    return { verified: true };
+  }
+
   @Post('signup')
-  @ApiOperation({ summary: 'Register a new Admin or Technician account directly' })
+  @ApiOperation({ summary: 'Register a Technician account with the workshop PIN' })
   @ApiResponse({ status: 201, type: LoginResponseDto })
-  async signup(@Body() dto: SignupDto): Promise<LoginResponseDto> {
-    return this.authService.signup(dto);
+  async signup(@Body() dto: SignupDto, @Ip() ip: string): Promise<LoginResponseDto> {
+    return this.limitPinAttempts(ip, () => this.authService.signup(dto));
   }
 
   @Post('register')
   @ApiOperation({ summary: 'Register alias for technician app' })
   @ApiResponse({ status: 201, type: LoginResponseDto })
-  async register(@Body() dto: SignupDto): Promise<LoginResponseDto> {
-    return this.authService.signup(dto);
+  async register(@Body() dto: SignupDto, @Ip() ip: string): Promise<LoginResponseDto> {
+    return this.limitPinAttempts(ip, () => this.authService.signup(dto));
   }
 
   @Post('register/send-otp')
