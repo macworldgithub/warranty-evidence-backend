@@ -84,11 +84,15 @@ export class AuthController {
     const now = Date.now();
     if (now >= this.pinWindowEndsAt) {
       this.pinAttempts.clear();
-      this.pinWindowEndsAt = now + 5 * 60 * 1000;
+      this.pinWindowEndsAt = now + 2 * 60 * 1000;
     }
     const attempts = this.pinAttempts.get(ip) ?? 0;
     if (attempts >= 5) {
-      throw new HttpException('Too many PIN attempts. Please try again in a few minutes.', HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException({
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        message: 'Too many PIN attempts. Please try again shortly.',
+        retryAfterSeconds: Math.ceil((this.pinWindowEndsAt - now) / 1000),
+      }, HttpStatus.TOO_MANY_REQUESTS);
     }
     this.pinAttempts.set(ip, attempts + 1);
     return action();
