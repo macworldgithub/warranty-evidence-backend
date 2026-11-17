@@ -35,6 +35,8 @@ export class VoiceToTechController {
     const wsProto = isHttps ? 'wss:' : 'ws:';
     return {
       status: hasKey ? 'ready' : 'missing_api_key',
+      isConfigured: hasKey,
+      model: 'nova-2',
       engine: 'Deepgram Nova-2',
       language: 'en-AU',
       endpoints: {
@@ -43,19 +45,7 @@ export class VoiceToTechController {
         sseStream: 'GET /api/v1/voice-to-tech/stream?audioUrl=...',
         liveWebSocket: `${wsProto}//${host}/api/v1/voice-to-tech/live`,
         interactiveDemo: 'GET /api/v1/voice-to-tech/demo',
-        token: 'GET /api/v1/voice-to-tech/token',
       },
-    };
-  }
-
-  @Get('token')
-  @ApiOperation({ summary: 'Get Deepgram streaming configuration & token for direct client connection' })
-  getToken() {
-    const key = this.voiceService.getApiKey();
-    return {
-      configured: !!key,
-      key,
-      url: 'wss://api.deepgram.com/v1/listen?model=nova-2&language=en-AU&smart_format=true&punctuate=true&interim_results=true',
     };
   }
 

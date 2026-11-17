@@ -99,6 +99,9 @@ export class TranscriptionResponseDto {
     description: 'True when transcription failed — mobile app should show keyboard fallback',
   })
   requiresManualEntry?: boolean;
+
+  @ApiPropertyOptional({ enum: ['not_configured', 'no_speech', 'provider_error'] })
+  failureReason?: 'not_configured' | 'no_speech' | 'provider_error';
 }
 
 // ─── Deepgram REST response shape ─────────────────────────────────────────────
@@ -142,7 +145,7 @@ export class VoiceToTechService {
 
     if (!apiKey) {
       this.logger.warn('DEEPGRAM_KEY not set — returning manual entry fallback');
-      return this.manualFallback('DEEPGRAM_KEY not configured');
+      return this.manualFallback('not_configured');
     }
 
     const headers = {
@@ -231,13 +234,13 @@ export class VoiceToTechService {
 
       // ── Neither provided ───────────────────────────────────────────────────
       else {
-        return this.manualFallback('No audio source provided — send audioUrl or audioBase64');
+        return this.manualFallback('no_speech');
       }
 
     } catch (err: any) {
       const msg = err?.response?.data?.err_msg ?? err?.message ?? 'Unknown error';
       this.logger.error(`Deepgram transcription failed: ${msg}`);
-      return this.manualFallback(msg);
+      return this.manualFallback('provider_error');
     }
   }
 
@@ -250,7 +253,7 @@ export class VoiceToTechService {
 
     if (!apiKey) {
       this.logger.warn('DEEPGRAM_KEY not set — returning manual entry fallback');
-      return this.manualFallback('DEEPGRAM_KEY not configured');
+      return this.manualFallback('not_configured');
     }
 
     const effectiveMime = detectAudioMimeType(buffer, mimeType);
@@ -275,7 +278,7 @@ export class VoiceToTechService {
     } catch (err: any) {
       const msg = err?.response?.data?.err_msg ?? err?.message ?? 'Unknown error';
       this.logger.error(`Deepgram buffer transcription failed: ${msg}`);
-      return this.manualFallback(msg);
+      return this.manualFallback('provider_error');
     }
   }
 
@@ -394,20 +397,20 @@ export class VoiceToTechService {
   private buildResponse(data: DeepgramResponse): TranscriptionResponseDto {
     const alternative = data?.results?.channels?.[0]?.alternatives?.[0];
 
-    if (!alternative?.transcript) {
+    const transcript = alternative?.transcript?.trim();
+    if (!transcript) {
       this.logger.warn('Deepgram returned empty transcript');
-      return this.manualFallback('Empty transcript returned');
+      return this.manualFallback('no_speech');
     }
 
-    const transcript = alternative.transcript.trim();
-    const confidence = Math.round((alternative.confidence ?? 0) * 100 * 10) / 10;
-    const words = alternative.words ?? [];
+    const confidence = Math.round((alternative?.confidence ?? 0) * 100 * 10) / 10;
+    const words = alternative?.words ?? [];
     const durationSeconds =
       data?.metadata?.duration ??
       (words.length > 0 ? words[words.length - 1]?.end ?? 0 : 0);
 
     this.logger.log(
-      `Transcription complete — "${transcript.substring(0, 60)}..." | ${confidence}% confidence | ${durationSeconds}s`,
+      `Transcription complete | ${confidence}% confidence | ${durationSeconds}s`,
     );
 
     return {
@@ -421,7 +424,7 @@ export class VoiceToTechService {
   }
 
   // ─── Graceful fallback — capture is never blocked by voice service ─────────
-  private manualFallback(reason: string): TranscriptionResponseDto {
+  private manualFallback(reason: NonNullable<TranscriptionResponseDto['failureReason']>): TranscriptionResponseDto {
     this.logger.warn(`Voice to Tech fallback triggered: ${reason}`);
     return {
       transcript: '',
@@ -430,6 +433,7 @@ export class VoiceToTechService {
       model: 'nova-2',
       engine: 'Deepgram Nova-2',
       requiresManualEntry: true,
+      failureReason: reason,
     };
   }
 }
