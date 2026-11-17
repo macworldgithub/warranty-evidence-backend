@@ -130,6 +130,19 @@ describe('AuthService session and clerk access rules', () => {
     });
   });
 
+  it('adds a rooftop to an existing technician without replacing the primary rooftop', async () => {
+    const account = { ...activeAdmin, id: 'tech-id', role: UserRole.TECHNICIAN, authorizedSiteIds: ['site_a'], save: jest.fn(async () => account) };
+    const users = { findOne: jest.fn().mockResolvedValue(account) };
+    const sites = { countDocuments: jest.fn().mockResolvedValue(2) };
+    const service = new AuthService(users as never, {} as never, sites as never, {} as never);
+
+    await expect(service.updateUser(account.id, {
+      role: UserRole.TECHNICIAN, siteId: 'site_a', authorizedSiteIds: ['site_a', 'site_b'],
+    })).resolves.toMatchObject({ defaultSiteId: 'site_a', authorizedSiteIds: ['site_a', 'site_b'] });
+    expect(account.save).toHaveBeenCalledTimes(1);
+    expect(account.authorizedSiteIds).toEqual(['site_a', 'site_b']);
+  });
+
   it('rejects inactive technician assignments', async () => {
     const service = createUserManagementService(1);
     await expect(service.createUser({

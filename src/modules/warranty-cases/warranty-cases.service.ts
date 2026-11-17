@@ -10,6 +10,7 @@ import { BrandPacksService } from '../brand-packs/brand-packs.service';
 import { StorageService } from '../../common/storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { VoiceToTechService } from '../voice-to-tech/voice-to-tech.service';
+import { SitesService } from '../sites/sites.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
 import { User, UserDocument } from '../../schemas/user.schema';
 import { PaginatedResponse } from '../../common/dto/pagination.dto';
@@ -209,6 +210,7 @@ export class WarrantyCasesService implements OnModuleInit {
     private brandPacksService: BrandPacksService,
     private storageService: StorageService,
     private notificationsService: NotificationsService,
+    private sitesService: SitesService,
     @Inject(forwardRef(() => VoiceToTechService))
     private voiceToTechService: VoiceToTechService,
   ) { }
@@ -952,6 +954,18 @@ export class WarrantyCasesService implements OnModuleInit {
     };
   }
 
+  private async resolveSiteName(siteId: string, savedName?: string): Promise<string> {
+    if (siteId) {
+      try {
+        const site = await this.sitesService.findOne(siteId);
+        return site.name;
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+    return (savedName === 'Booran Dealership' ? '' : savedName) || siteId || 'Unassigned';
+  }
+
   async findOne(id: string, callerRole?: string, callerUserId?: string, callerUserName?: string): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id }).lean();
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${id} not found`);
@@ -967,7 +981,7 @@ export class WarrantyCasesService implements OnModuleInit {
       }
     }
 
-    return warrantyCase;
+    return { ...warrantyCase, siteName: await this.resolveSiteName(warrantyCase.siteId, warrantyCase.siteName) };
   }
 
   async create(dto: CreateWarrantyCaseDto, callerRole?: string, callerUserId?: string): Promise<WarrantyCase> {
@@ -1000,6 +1014,7 @@ export class WarrantyCasesService implements OnModuleInit {
       }
     }
 
+    const siteName = await this.resolveSiteName(dto.siteId);
     const evaluated = await this.brandPacksService.evaluateRules({
       brandId: dto.brandId,
       faultCategory: dto.faultCategory,
@@ -1012,7 +1027,7 @@ export class WarrantyCasesService implements OnModuleInit {
     const newCase = new this.caseModel({
       id: `CASE-${dto.roNumber.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`,
       siteId: dto.siteId,
-      siteName: (dto.siteId.includes('cranbourne') ? 'Booran BYD Cranbourne' : dto.siteId.includes('dandenong') ? 'Booran Dandenong Multi-Franchise' : dto.siteId.includes('cheltenham') ? 'Booran MG \u0026 Chery Cheltenham' : dto.siteId.includes('berwick') ? 'Booran Berwick Commercials' : 'Booran Dealership'),
+      siteName,
       brandId: dto.brandId,
       brandName: dto.make,
       roNumber: dto.roNumber,
