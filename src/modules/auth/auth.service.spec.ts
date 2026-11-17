@@ -28,7 +28,7 @@ describe('AuthService session and clerk access rules', () => {
     return new AuthService(userModel as never, {} as never, {} as never, {} as never);
   }
 
-  function createUserManagementService(): AuthService {
+  function createUserManagementService(activeSiteCount = 1): AuthService {
     const UserModel = jest.fn().mockImplementation((data) => ({
       ...data,
       save: jest.fn().mockResolvedValue({
@@ -39,7 +39,7 @@ describe('AuthService session and clerk access rules', () => {
       findOne: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
     });
     const siteModel = {
-      countDocuments: jest.fn().mockResolvedValue(1),
+      countDocuments: jest.fn().mockResolvedValue(activeSiteCount),
     };
     return new AuthService(UserModel as never, {} as never, siteModel as never, {} as never);
   }
@@ -105,6 +105,37 @@ describe('AuthService session and clerk access rules', () => {
       defaultSiteId: 'site_a',
       authorizedSiteIds: ['site_a'],
     });
+  });
+
+  it('saves both admin-assigned technician rooftops with a separate default', async () => {
+    const service = createUserManagementService(2);
+    await expect(service.createUser({
+      name: 'Technician Example', email: 'tech@booran.com.au', password: 'password',
+      role: UserRole.TECHNICIAN, siteId: 'site_b', authorizedSiteIds: ['site_a', 'site_b'],
+    })).resolves.toMatchObject({ defaultSiteId: 'site_b', authorizedSiteIds: ['site_a', 'site_b'] });
+  });
+
+  it('preserves technician assignments on profile edits and removes the old default when explicitly unassigned', async () => {
+    const account = { ...activeAdmin, id: 'tech-id', role: UserRole.TECHNICIAN, save: async () => account };
+    const users = { findOne: jest.fn().mockResolvedValue(account) };
+    const sites = { countDocuments: jest.fn().mockResolvedValue(1) };
+    const service = new AuthService(users as never, {} as never, sites as never, {} as never);
+
+    await expect(service.updateUser(account.id, { name: 'Updated Name' })).resolves.toMatchObject({
+      defaultSiteId: 'site_a', authorizedSiteIds: ['site_a', 'site_b'],
+    });
+    expect(sites.countDocuments).not.toHaveBeenCalled();
+    await expect(service.updateUser(account.id, { authorizedSiteIds: ['site_b'] })).resolves.toMatchObject({
+      defaultSiteId: 'site_b', authorizedSiteIds: ['site_b'],
+    });
+  });
+
+  it('rejects inactive technician assignments', async () => {
+    const service = createUserManagementService(1);
+    await expect(service.createUser({
+      name: 'Technician Example', email: 'tech@booran.com.au', password: 'password',
+      role: UserRole.TECHNICIAN, authorizedSiteIds: ['site_a', 'inactive-site'],
+    })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('creates an invited username account and lets it sign in with mixed case', async () => {

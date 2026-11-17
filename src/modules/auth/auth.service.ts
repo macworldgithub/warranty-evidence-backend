@@ -357,17 +357,20 @@ export class AuthService implements OnModuleInit {
     const siteId = dto.siteId || requestedSites[0] || 'site_cranbourne_byd';
     const authorizedSiteIds = role === UserRole.ADMIN
       ? ['site_cranbourne_byd', 'site_dandenong_multi', 'site_cheltenham_mg', 'site_berwick_toyota_ford']
-      : role === UserRole.CLERK
+      : role === UserRole.CLERK || role === UserRole.TECHNICIAN
         ? (requestedSites.length > 0 ? requestedSites : dto.siteId ? [dto.siteId] : [])
         : [siteId];
 
     if (role === UserRole.CLERK && authorizedSiteIds.length === 0) {
       throw new BadRequestException('A Warranty Clerk must be assigned to at least one site.');
     }
+    if (role === UserRole.TECHNICIAN && authorizedSiteIds.length === 0) {
+      throw new BadRequestException('A Technician must be assigned to at least one site.');
+    }
     if (!authorizedSiteIds.includes(siteId)) {
       authorizedSiteIds.unshift(siteId);
     }
-    if (role === UserRole.CLERK) {
+    if (role === UserRole.CLERK || role === UserRole.TECHNICIAN) {
       await this.assertSitesAreActive(authorizedSiteIds);
     }
 
@@ -403,7 +406,6 @@ export class AuthService implements OnModuleInit {
     if (!user) {
       throw new NotFoundException(`User with ID '${id}' not found.`);
     }
-
     await this.userModel.deleteOne({ id });
     return {
       success: true,
@@ -417,6 +419,7 @@ export class AuthService implements OnModuleInit {
       throw new NotFoundException(`User with ID '${id}' not found.`);
     }
 
+    const previousRole = user.role;
     if (dto.name) user.name = dto.name.trim();
     if (dto.email) user.email = dto.email.toLowerCase().trim();
     if (dto.role) user.role = dto.role;
@@ -424,7 +427,7 @@ export class AuthService implements OnModuleInit {
     const requestedSites = dto.authorizedSiteIds
       ? [...new Set(dto.authorizedSiteIds.filter(Boolean))]
       : [...(user.authorizedSiteIds || [])];
-    const nextDefaultSiteId = dto.siteId || user.defaultSiteId || requestedSites[0];
+    let nextDefaultSiteId = dto.siteId || user.defaultSiteId || requestedSites[0];
 
     if (nextRole === UserRole.CLERK && requestedSites.length === 0) {
       throw new BadRequestException('A Warranty Clerk must be assigned to at least one site.');
@@ -433,7 +436,20 @@ export class AuthService implements OnModuleInit {
     if (nextRole === UserRole.ADMIN) {
       user.authorizedSiteIds = ['site_cranbourne_byd', 'site_dandenong_multi', 'site_cheltenham_mg', 'site_berwick_toyota_ford'];
     } else if (nextRole === UserRole.TECHNICIAN) {
-      user.authorizedSiteIds = [nextDefaultSiteId || 'site_cranbourne_byd'];
+      let technicianSites = requestedSites;
+      if (dto.authorizedSiteIds === undefined &&
+        (!requestedSites.length || previousRole !== nextRole || (dto.siteId && !requestedSites.includes(dto.siteId)))) {
+        technicianSites = [dto.siteId || user.defaultSiteId].filter(Boolean);
+      }
+      if (dto.siteId && !technicianSites.includes(dto.siteId)) technicianSites.unshift(dto.siteId);
+      if (!technicianSites.length) {
+        throw new BadRequestException('A Technician must be assigned to at least one site.');
+      }
+      nextDefaultSiteId = technicianSites.includes(nextDefaultSiteId) ? nextDefaultSiteId : technicianSites[0];
+      if (dto.authorizedSiteIds !== undefined || dto.siteId || previousRole !== nextRole) {
+        await this.assertSitesAreActive(technicianSites);
+      }
+      user.authorizedSiteIds = technicianSites;
     } else {
       if (nextDefaultSiteId && !requestedSites.includes(nextDefaultSiteId)) {
         requestedSites.unshift(nextDefaultSiteId);
@@ -928,7 +944,7 @@ export class AuthService implements OnModuleInit {
       isActive: true,
     });
     if (activeSiteCount !== siteIds.length) {
-      throw new BadRequestException('Every assigned Clerk site must exist and be active.');
+      throw new BadRequestException('Every assigned dealership site must exist and be active.');
     }
   }
 
