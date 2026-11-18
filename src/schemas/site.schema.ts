@@ -1,3 +1,4 @@
+import { LoanReservation, LoanReservationSchema } from './loan-reservation.schema';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -5,6 +6,10 @@ export type SiteDocument = Site & Document;
 
 @Schema({ collection: 'sites', timestamps: true })
 export class Site {
+  // Customer details must never appear in the public site directory.
+  @Prop({ type: [LoanReservationSchema], default: [], select: false })
+  loanReservations?: LoanReservation[];
+
   @Prop({ required: true, unique: true })
   id: string;
 

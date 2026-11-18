@@ -273,7 +273,16 @@ export class SitesService implements OnModuleInit {
         { upsert: true },
       );
     }
+    await this.ensureGwmBrandForDandenong();
     console.log(`?? Successfully synchronized ${defaultSites.length} dealership rooftops`);
+  }
+
+  async ensureGwmBrandForDandenong(): Promise<void> {
+    // Preserve existing custom rooftop brand lists; do not replace them with seed defaults.
+    await this.siteModel.updateMany(
+      { id: { $in: ['site_dandenong_2027', 'site_dandenong_gwm'] } },
+      { $addToSet: { authorizedBrandIds: 'brand_gwm' } },
+    );
   }
 
   async findAll(): Promise<Site[]> {
