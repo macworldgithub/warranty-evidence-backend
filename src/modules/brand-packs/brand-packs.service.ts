@@ -373,7 +373,14 @@ export class BrandPacksService implements OnModuleInit {
   }
 
   async findActiveByBrand(brandId: string): Promise<BrandPack> {
-    const pack = await this.packModel.findOne({ brandId, status: 'PUBLISHED' }).sort({ version: -1 }).lean();
+    let pack = await this.packModel.findOne({ brandId, status: 'PUBLISHED' }).sort({ version: -1 }).lean();
+    if (!pack) {
+      const brand = await this.brandModel.findOne({ id: brandId, isActive: true }).lean();
+      if (brand?.activeBrandPackId === 'brandpack_common_v1') {
+        const common = await this.packModel.findOne({ id: brand.activeBrandPackId, status: 'PUBLISHED' }).lean();
+        if (common) return { ...common, brandId: brand.id, brandName: brand.name };
+      }
+    }
     if (!pack) {
       throw new NotFoundException(`No active Brand Pack found for brand ${brandId}`);
     }

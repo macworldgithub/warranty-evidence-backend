@@ -147,6 +147,11 @@ export class OutboundConditionDto {
 }
 
 export class CreateLoanAgreementDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reservationId?: string;
+
   @ApiProperty({ example: 'site_cranbourne_byd' })
   @IsString()
   @IsNotEmpty()

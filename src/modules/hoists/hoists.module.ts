@@ -1,3 +1,4 @@
+import { AuthModule } from '../auth/auth.module';
 ﻿import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Hoist, HoistSchema } from '../../schemas/hoist.schema';
@@ -7,6 +8,7 @@ import { HoistsController } from './hoists.controller';
 
 @Module({
   imports: [
+    AuthModule,
     MongooseModule.forFeature([
       { name: Hoist.name, schema: HoistSchema },
       { name: HoistInspection.name, schema: HoistInspectionSchema },

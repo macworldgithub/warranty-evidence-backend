@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { Injectable, NotFoundException, OnModuleInit, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Hoist, HoistDocument } from '../../schemas/hoist.schema';
@@ -49,13 +50,6 @@ export class HoistsService implements OnModuleInit {
   }
 
   async seedDefaultHoists() {
-    const count = await this.hoistModel.countDocuments();
-    if (count >= 23) {
-      return;
-    }
-
-    console.log('?? Seeding 23 Booran South Morang Hoists (11 Hyundai/Chery, 12 BYD/Kia)...');
-
     const hoistsToSeed: any[] = [];
 
     // 11 Hoists for Facility 1: Hyundai / Chery Workshop
@@ -76,7 +70,7 @@ export class HoistsService implements OnModuleInit {
       hoistsToSeed.push({
         id: `hoist_sm_hc_${String(i).padStart(2, '0')}`,
         hoistNumber: i,
-        name: `Hoist Bay ${i}`,
+        name: `Hoist ${i}`,
         facility: 'hyundai_chery',
         facilityName: 'Hyundai & Chery Workshop',
         siteId: 'site_south_morang_hyundai',
@@ -89,8 +83,8 @@ export class HoistsService implements OnModuleInit {
       });
     }
 
-    // 12 Hoists for Facility 2: BYD / Kia Workshop
-    for (let i = 1; i <= 12; i++) {
+    // 11 Hoists for Facility 2: BYD / Kia Workshop
+    for (let i = 1; i <= 11; i++) {
       let type = '2-Post Clearfloor (4.5T)';
       let capacity = 4500;
       if (i === 4 || i === 8) {
@@ -107,7 +101,7 @@ export class HoistsService implements OnModuleInit {
       hoistsToSeed.push({
         id: `hoist_sm_bk_${String(i).padStart(2, '0')}`,
         hoistNumber: i,
-        name: `Hoist Bay ${i}`,
+        name: `Hoist ${i}`,
         facility: 'byd_kia',
         facilityName: 'BYD & Kia Workshop',
         siteId: 'site_south_morang_byd',
@@ -121,18 +115,17 @@ export class HoistsService implements OnModuleInit {
     }
 
     for (const h of hoistsToSeed) {
+      const { name, ...initialFields } = h;
       await this.hoistModel.updateOne(
-        { id: h.id },
-        { $setOnInsert: h },
-        { upsert: true },
+        { id: h.id }, { $set: { name }, $setOnInsert: initialFields }, { upsert: true },
       );
     }
-
-    console.log(`? Hoist inventory synchronized: 23 hoists across 2 facilities`);
+    // Retire the old twelfth bay without removing its inspection history.
+    await this.hoistModel.updateOne({ id: 'hoist_sm_bk_12' }, { $set: { isActive: false } });
   }
 
   async findAll(facility?: string, siteId?: string): Promise<Hoist[]> {
-    const filter: any = { isActive: true };
+    const filter: any = { isActive: true, hoistNumber: { $gte: 1, $lte: 11 } };
     if (facility && facility !== 'all') {
       filter.facility = facility;
     }
@@ -151,7 +144,7 @@ export class HoistsService implements OnModuleInit {
   }
 
   async getSummary(facility?: string) {
-    const filter: any = { isActive: true };
+    const filter: any = { isActive: true, hoistNumber: { $gte: 1, $lte: 11 } };
     if (facility && facility !== 'all') {
       filter.facility = facility;
     }
@@ -252,6 +245,25 @@ export class HoistsService implements OnModuleInit {
     );
 
     return saved.toObject();
+  }
+
+  async assign(id: string, dto: { jobNumber?: string; vehicleRego?: string }, staffId: string) {
+    const jobNumber = dto.jobNumber?.trim();
+    const vehicleRego = dto.vehicleRego?.trim().toUpperCase();
+    if (!jobNumber && !vehicleRego) throw new BadRequestException('Enter a job / RO number or vehicle registration.');
+    const assigned = await this.hoistModel.findOneAndUpdate({
+      id, isActive: true, hoistNumber: { $gte: 1, $lte: 11 }, status: 'OPERATIONAL',
+      lockoutTagoutActive: { $ne: true }, assignment: null,
+    }, { $set: { assignment: { id: randomUUID(), jobNumber, vehicleRego, assignedBy: staffId, assignedAt: new Date().toISOString() } } }, { returnDocument: 'after' }).lean();
+    if (!assigned) throw new ConflictException('This hoist is occupied, inactive or unavailable. Refresh and choose an operational hoist.');
+    return assigned;
+  }
+
+  async release(id: string, assignmentId: string) {
+    const released = await this.hoistModel.findOneAndUpdate({ id, 'assignment.id': assignmentId },
+      { $unset: { assignment: '' } }, { returnDocument: 'after' }).lean();
+    if (!released) throw new ConflictException('The hoist assignment changed. Refresh before releasing it.');
+    return released;
   }
 
   async getInspections(hoistId?: string, facility?: string, shiftDate?: string, limit: number = 50): Promise<HoistInspection[]> {

@@ -3,8 +3,20 @@ import { Document } from 'mongoose';
 
 export type HoistDocument = Hoist & Document;
 
+@Schema({ _id: false })
+class HoistAssignment {
+  @Prop({ required: true }) id: string;
+  @Prop() jobNumber?: string;
+  @Prop() vehicleRego?: string;
+  @Prop({ required: true }) assignedBy: string;
+  @Prop({ required: true }) assignedAt: string;
+}
+
 @Schema({ collection: 'hoists', timestamps: true })
 export class Hoist {
+  @Prop({ type: SchemaFactory.createForClass(HoistAssignment) })
+  assignment?: HoistAssignment;
+
   @Prop({ required: true, unique: true })
   id: string;
 

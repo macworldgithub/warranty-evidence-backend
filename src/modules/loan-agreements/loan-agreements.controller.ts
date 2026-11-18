@@ -1,3 +1,5 @@
+import { ReserveLoanerDto } from './dto/reserve-loaner.dto';
+import { LoanReservationsService } from './loan-reservations.service';
 import {
   Controller,
   Get,
@@ -29,6 +31,7 @@ import { UserRole } from '../../common/enums';
 export class LoanAgreementsController {
   constructor(
     private readonly service: LoanAgreementsService,
+    private readonly reservations: LoanReservationsService,
     private readonly authService: AuthService,
   ) {}
 
@@ -80,6 +83,27 @@ export class LoanAgreementsController {
   ) {
     const user = await this.authService.resolveUserFromAuthorization(authorization);
     return this.service.findAll(await this.scopedSite(user, siteId), status);
+  }
+
+  @Get('reservations')
+  async listReservations(@Query('siteId') siteId: string | undefined, @Headers('authorization') authorization?: string) {
+    const user = await this.authService.resolveUserFromAuthorization(authorization);
+    return this.reservations.list(await this.scopedSite(user, siteId));
+  }
+
+  @Post('reservations')
+  async reserveLoaner(@Body() dto: ReserveLoanerDto, @Headers('authorization') authorization?: string) {
+    const user = await this.authService.resolveUserFromAuthorization(authorization);
+    this.assertSiteAccess(user, dto.siteId);
+    return this.reservations.reserve(dto);
+  }
+
+  @Post('reservations/:id/cancel')
+  async cancelReservation(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+    const user = await this.authService.resolveUserFromAuthorization(authorization);
+    const reservation = await this.reservations.find(id);
+    this.assertSiteAccess(user, reservation.siteId);
+    return this.reservations.cancel(id);
   }
 
   @Get(':id')

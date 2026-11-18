@@ -1,3 +1,4 @@
+import { LoanReservationsService } from './loan-reservations.service';
 import { Injectable, NotFoundException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -17,6 +18,7 @@ export class LoanAgreementsService implements OnModuleInit {
     @InjectModel(LoanAgreement.name)
     private readonly loanAgreementModel: Model<LoanAgreementDocument>,
     private readonly pdfService: LoanAgreementPdfService,
+    private readonly reservations: LoanReservationsService,
   ) {}
 
   async onModuleInit() {
@@ -340,8 +342,19 @@ export class LoanAgreementsService implements OnModuleInit {
       templateVersion: 'v1.0-2026',
     });
 
-    const saved = await newAgreement.save();
-    return saved.toObject();
+    if (dto.reservationId) {
+      const booking = await this.reservations.claim(dto.reservationId, dto.siteId, id, dto.vehicle.rego,
+        dto.loanStartDateTime || '', dto.dueBackDateTime);
+      newAgreement.reservationId = dto.reservationId;
+      newAgreement.loanerName = `GWM LOAN ${booking.loanerNumber}`;
+    }
+    try {
+      const saved = await newAgreement.save();
+      return saved.toObject();
+    } catch (error) {
+      if (dto.reservationId) await this.reservations.releaseClaim(id);
+      throw error;
+    }
   }
 
   // ── SIGN & FINALIZE AGREEMENT ────────────────────────────────────────────
@@ -458,6 +471,7 @@ export class LoanAgreementsService implements OnModuleInit {
     agreement.status = 'RETURNED';
 
     const saved = await agreement.save();
+    await this.reservations.complete(id);
     return saved.toObject();
   }
 
@@ -466,6 +480,15 @@ export class LoanAgreementsService implements OnModuleInit {
     const agreement = await this.loanAgreementModel.findOne({ id });
     if (!agreement) {
       throw new NotFoundException(`Loan agreement ${id} not found.`);
+    }
+
+    if (agreement.reservationId && (
+      (dto.siteId !== undefined && dto.siteId !== agreement.siteId) ||
+      (dto.loanStartDateTime !== undefined && dto.loanStartDateTime !== agreement.loanStartDateTime) ||
+      (dto.dueBackDateTime !== undefined && dto.dueBackDateTime !== agreement.dueBackDateTime) ||
+      (dto.status !== undefined && dto.status !== agreement.status && dto.status !== 'RETURNED')
+    )) {
+      throw new BadRequestException('The site and times of a reserved loaner cannot be changed after issue.');
     }
 
     if (dto.customer) {
@@ -501,6 +524,10 @@ export class LoanAgreementsService implements OnModuleInit {
     }
 
     const saved = await agreement.save();
+    if (agreement.reservationId) {
+      await this.reservations.updateRego(id, agreement.vehicle.rego);
+      if (agreement.status === 'RETURNED') await this.reservations.complete(id);
+    }
     return saved.toObject();
   }
 
@@ -510,6 +537,7 @@ export class LoanAgreementsService implements OnModuleInit {
     if (result.deletedCount === 0) {
       throw new NotFoundException(`Loan agreement ${id} not found.`);
     }
+    await this.reservations.complete(id);
     return { success: true, message: `Loan agreement ${id} deleted successfully.` };
   }
 }

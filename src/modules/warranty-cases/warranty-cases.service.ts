@@ -1,3 +1,4 @@
+import { missingVehiclePhotos } from './vehicle-photos';
 
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -1038,7 +1039,7 @@ export class WarrantyCasesService implements OnModuleInit {
       model: dto.model,
       year: dto.year,
       powertrain: dto.powertrain,
-      status: 'Awaiting Review',
+      status: 'Uploading',
       technicianId: dto.technicianId,
       technicianName: dto.technicianName,
       concernTitle: dto.concernTitle,
@@ -1076,45 +1077,15 @@ export class WarrantyCasesService implements OnModuleInit {
         : [],
       flagHistory: [],
       checklistSummary: {
-        totalMandatory: evaluated.mandatoryCount,
-        completedMandatory: (dto.evidenceItems && Array.isArray(dto.evidenceItems)) ? dto.evidenceItems.length : 0,
+        totalMandatory: 7,
+        completedMandatory: 7 - missingVehiclePhotos(dto.evidenceItems || [], true).length,
         totalOptional: evaluated.optionalCount,
         completedOptional: 0,
-        isReadyForSubmission: true,
+        isReadyForSubmission: false,
       },
     });
 
     const savedCase = (await newCase.save()).toObject();
-
-    // Trigger asynchronous email & push alerts to Admins (non-blocking)
-    this.getAdminEmails()
-      .then((adminEmails) => {
-        this.notificationsService.sendNewTicketRaisedAlert(
-          {
-            caseId: savedCase.id,
-            roNumber: savedCase.roNumber,
-            vin: savedCase.vin,
-            make: savedCase.make,
-            model: savedCase.model,
-            year: savedCase.year,
-            concernTitle: savedCase.concernTitle,
-            faultCategory: savedCase.faultCategory,
-            technicianName: savedCase.technicianName,
-            siteName: savedCase.siteName,
-          },
-          adminEmails,
-        ).catch((err) => console.error('[Notifications] Failed to send new ticket alert:', err?.message));
-      })
-      .catch(() => {});
-
-    this.notificationsService.sendNewTicketPushToAdmins({
-      id: savedCase.id,
-      roNumber: savedCase.roNumber,
-      make: savedCase.make,
-      model: savedCase.model,
-      vin: savedCase.vin,
-      technicianName: savedCase.technicianName,
-    }).catch((err) => console.error('[Notifications] Failed to send new ticket push:', err?.message));
 
     return savedCase;
   }
@@ -1207,12 +1178,15 @@ export class WarrantyCasesService implements OnModuleInit {
     });
 
     const hasUnresolvedFlags = warrantyCase.flagHistory.some((f) => !f.resolvedAt);
-    if (!hasUnresolvedFlags && warrantyCase.status === 'Flagged') {
+    const photosReady = missingVehiclePhotos(warrantyCase.evidenceItems, true).length === 0;
+    if (!hasUnresolvedFlags && photosReady && warrantyCase.status === 'Flagged') {
       warrantyCase.status = 'Awaiting Review';
       warrantyCase.checklistSummary.isReadyForSubmission = true;
     }
 
-    warrantyCase.checklistSummary.completedMandatory = warrantyCase.evidenceItems.length;
+    warrantyCase.checklistSummary.totalMandatory = 7;
+    warrantyCase.checklistSummary.completedMandatory = 7 - missingVehiclePhotos(warrantyCase.evidenceItems, true).length;
+    warrantyCase.checklistSummary.isReadyForSubmission = photosReady && !hasUnresolvedFlags;
     warrantyCase.markModified('evidenceItems');
     warrantyCase.markModified('flagHistory');
     warrantyCase.markModified('checklistSummary');
@@ -1301,14 +1275,17 @@ export class WarrantyCasesService implements OnModuleInit {
     });
 
     const hasUnresolvedFlags = warrantyCase.flagHistory.some((f) => !f.resolvedAt);
-    if (!hasUnresolvedFlags && warrantyCase.status === 'Flagged') {
+    const photosReady = missingVehiclePhotos(warrantyCase.evidenceItems, true).length === 0;
+    if (!hasUnresolvedFlags && photosReady && warrantyCase.status === 'Flagged') {
       warrantyCase.status = 'Awaiting Review';
       warrantyCase.checklistSummary.isReadyForSubmission = true;
     } else if (hasUnresolvedFlags) {
       warrantyCase.checklistSummary.isReadyForSubmission = false;
     }
 
-    warrantyCase.checklistSummary.completedMandatory = warrantyCase.evidenceItems.length;
+    warrantyCase.checklistSummary.totalMandatory = 7;
+    warrantyCase.checklistSummary.completedMandatory = 7 - missingVehiclePhotos(warrantyCase.evidenceItems, true).length;
+    warrantyCase.checklistSummary.isReadyForSubmission = photosReady && !hasUnresolvedFlags;
 
     warrantyCase.markModified('flagHistory');
     warrantyCase.markModified('evidenceItems');
@@ -1447,6 +1424,11 @@ export class WarrantyCasesService implements OnModuleInit {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
+    const missingPhotos = missingVehiclePhotos(warrantyCase.evidenceItems, true);
+    if (missingPhotos.length) throw new BadRequestException(
+      'Upload required vehicle photos before completing: ' + missingPhotos.map(photo => photo.name).join(', '),
+    );
+
     const unresolvedFlags = warrantyCase.flagHistory?.filter((f) => !f.resolvedAt) || [];
     if (unresolvedFlags.length > 0) {
       const details = unresolvedFlags
@@ -1458,6 +1440,8 @@ export class WarrantyCasesService implements OnModuleInit {
     }
 
     warrantyCase.status = 'Awaiting Review';
+    warrantyCase.checklistSummary.totalMandatory = 7;
+    warrantyCase.checklistSummary.completedMandatory = 7;
     warrantyCase.checklistSummary.isReadyForSubmission = true;
     warrantyCase.markModified('checklistSummary');
     const savedCase = (await warrantyCase.save()).toObject();
@@ -1481,6 +1465,11 @@ export class WarrantyCasesService implements OnModuleInit {
         ).catch((err) => console.error('[Notifications] Failed to send workshop submission alert:', err?.message));
       })
       .catch(() => {});
+
+    this.notificationsService.sendNewTicketPushToAdmins({
+      id: savedCase.id, roNumber: savedCase.roNumber, make: savedCase.make,
+      model: savedCase.model, vin: savedCase.vin, technicianName: savedCase.technicianName,
+    }).catch((err) => console.error('[Notifications] Failed to send new ticket push:', err?.message));
 
     return savedCase;
   }
@@ -1541,6 +1530,11 @@ export class WarrantyCasesService implements OnModuleInit {
   async markSubmitted(caseId: string, dto: MarkSubmittedDto): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
+
+    const missingPhotos = missingVehiclePhotos(warrantyCase.evidenceItems, true);
+    if (missingPhotos.length) throw new BadRequestException(
+      'Upload required vehicle photos before completing: ' + missingPhotos.map(photo => photo.name).join(', '),
+    );
 
     const unresolvedFlags = warrantyCase.flagHistory?.filter((f) => !f.resolvedAt) || [];
     if (unresolvedFlags.length > 0) {

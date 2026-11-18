@@ -1,3 +1,4 @@
+import { LoanReservationsService, LoanReservationSlot, LoanReservationSlotSchema } from './loan-reservations.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { LoanAgreement, LoanAgreementSchema } from '../../schemas/loan-agreement.schema';
@@ -11,10 +12,11 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
     MongooseModule.forFeature([
       { name: LoanAgreement.name, schema: LoanAgreementSchema },
+      { name: LoanReservationSlot.name, schema: LoanReservationSlotSchema },
     ]),
   ],
   controllers: [LoanAgreementsController],
-  providers: [LoanAgreementsService, LoanAgreementPdfService],
+  providers: [LoanReservationsService, LoanAgreementsService, LoanAgreementPdfService],
   exports: [LoanAgreementsService],
 })
 export class LoanAgreementsModule {}

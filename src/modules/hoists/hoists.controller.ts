@@ -1,11 +1,13 @@
-﻿import { Controller, Get, Post, Patch, Param, Query, Body, Headers } from '@nestjs/common';
+import { AuthService } from '../auth/auth.service';
+import { AssignHoistDto, ReleaseHoistDto } from './assignment.dto';
+﻿import { Controller, Get, Post, Patch, Param, Query, Body, Headers, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { HoistsService, SubmitInspectionDto, UpdateHoistDto } from './hoists.service';
 
 @ApiTags('Daily Hoist Inspections')
 @Controller('hoists')
 export class HoistsController {
-  constructor(private readonly hoistsService: HoistsService) {}
+  constructor(private readonly hoistsService: HoistsService, private readonly authService: AuthService) {}
 
   @Get()
   @ApiOperation({ summary: 'List all workshop hoists, optionally filtered by facility (hyundai_chery / byd_kia)' })
@@ -37,6 +39,28 @@ export class HoistsController {
   @ApiOperation({ summary: 'Get single hoist details' })
   async findOne(@Param('id') id: string) {
     return this.hoistsService.findOne(id);
+  }
+
+  private async assignmentUser(id: string, authorization?: string) {
+    const user = await this.authService.resolveUserFromAuthorization(authorization);
+    const hoist = await this.hoistsService.findOne(id);
+    const sites = user.authorizedSiteIds?.length ? user.authorizedSiteIds : [user.defaultSiteId];
+    if (user.role !== 'ADMIN' && !sites.includes(hoist.siteId)) {
+      throw new ForbiddenException('This hoist is outside your assigned sites.');
+    }
+    return user;
+  }
+
+  @Post(':id/assign')
+  async assign(@Param('id') id: string, @Body() dto: AssignHoistDto, @Headers('authorization') authorization?: string) {
+    const user = await this.assignmentUser(id, authorization);
+    return this.hoistsService.assign(id, dto, user.id);
+  }
+
+  @Post(':id/release')
+  async release(@Param('id') id: string, @Body() dto: ReleaseHoistDto, @Headers('authorization') authorization?: string) {
+    await this.assignmentUser(id, authorization);
+    return this.hoistsService.release(id, dto.assignmentId);
   }
 
   @Post('inspect')

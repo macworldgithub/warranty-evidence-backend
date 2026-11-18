@@ -72,3 +72,19 @@ describe('Create brand packs', () => {
     expect(packModel.updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe('configured common brand packs', () => {
+  it('resolves GWM to its configured common pack with the selected brand identity', async () => {
+    const common = { id: 'brandpack_common_v1', brandId: 'brand_common', brandName: 'Common', status: 'PUBLISHED', rules: [{ ruleKey: 'vin_photo' }] };
+    const packModel = { findOne: jest.fn((query) => query.id ? { lean: async () => common } : { sort: () => ({ lean: async () => null }) }) };
+    const brandModel = { findOne: jest.fn(() => ({ lean: async () => ({ id: 'brand_gwm', name: 'GWM', activeBrandPackId: common.id }) })) };
+    const service = new BrandPacksService(packModel as never, brandModel as never);
+    expect(await service.findActiveByBrand('brand_gwm')).toMatchObject({ id: common.id, brandId: 'brand_gwm', brandName: 'GWM', rules: common.rules });
+  });
+  it('does not provide an unrelated common pack for an unknown brand', async () => {
+    const packModel = { findOne: () => ({ sort: () => ({ lean: async () => null }) }) };
+    const brandModel = { findOne: () => ({ lean: async () => null }) };
+    const service = new BrandPacksService(packModel as never, brandModel as never);
+    await expect(service.findActiveByBrand('unknown')).rejects.toThrow('No active Brand Pack');
+  });
+});

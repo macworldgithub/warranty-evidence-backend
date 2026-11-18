@@ -215,6 +215,9 @@ export const SignaturesSchema = SchemaFactory.createForClass(SignaturesSubdocume
 
 @Schema({ timestamps: true, collection: 'loan_agreements' })
 export class LoanAgreement {
+  @Prop({ index: true }) reservationId?: string;
+  @Prop() loanerName?: string;
+
   @Prop({ required: true, unique: true, index: true })
   id: string;
 

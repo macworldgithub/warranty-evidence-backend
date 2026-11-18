@@ -153,6 +153,15 @@ export class BrandsService implements OnModuleInit {
         activeBrandPackId: 'brandpack_common_v1',
         isActive: true,
       },
+      {
+        id: 'brand_gwm',
+        code: 'GWM',
+        name: 'GWM',
+        description: 'Great Wall Motor',
+        seedChecklistReference: 'Tier 1 Common Pack',
+        activeBrandPackId: 'brandpack_common_v1',
+        isActive: true,
+      },
     ];
 
     for (const brand of defaultBrands) {
