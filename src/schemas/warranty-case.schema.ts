@@ -132,6 +132,9 @@ export class WarrantyCase {
   @Prop({ required: true })
   brandName: string;
 
+  @Prop({ unique: true, sparse: true })
+  idempotencyKey?: string;
+
   @Prop({ required: true })
   roNumber: string;
 

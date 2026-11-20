@@ -25,6 +25,11 @@ export class CreateWarrantyCaseDto {
   @IsString()
   brandId: string;
 
+  @ApiPropertyOptional({ description: 'Stable client key used to make case creation safe to retry' })
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
+
   @ApiProperty({ example: 'CR-98421' })
   @IsString()
   roNumber: string;
@@ -1018,6 +1023,12 @@ export class WarrantyCasesService implements OnModuleInit {
       }
     }
 
+    const scopedIdempotencyKey = dto.idempotencyKey && callerUserId ? `${callerUserId}:${dto.idempotencyKey}` : undefined;
+    if (scopedIdempotencyKey) {
+      const existing = await this.caseModel.findOne({ idempotencyKey: scopedIdempotencyKey }).lean();
+      if (existing) return existing as WarrantyCase;
+    }
+
     const siteName = await this.resolveSiteName(dto.siteId);
     const evaluated = await this.brandPacksService.evaluateRules({
       brandId: dto.brandId,
@@ -1030,6 +1041,7 @@ export class WarrantyCasesService implements OnModuleInit {
 
     const newCase = new this.caseModel({
       id: `CASE-${dto.roNumber.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`,
+      idempotencyKey: scopedIdempotencyKey,
       siteId: dto.siteId,
       siteName,
       brandId: dto.brandId,
@@ -1088,9 +1100,16 @@ export class WarrantyCasesService implements OnModuleInit {
       },
     });
 
-    const savedCase = (await newCase.save()).toObject();
-
-    return savedCase;
+    try {
+      const savedCase = (await newCase.save()).toObject();
+      return savedCase;
+    } catch (error: any) {
+      if (error?.code === 11000 && scopedIdempotencyKey) {
+        const existing = await this.caseModel.findOne({ idempotencyKey: scopedIdempotencyKey }).lean();
+        if (existing) return existing as WarrantyCase;
+      }
+      throw error;
+    }
   }
 
   // ─── Real file upload — multipart/form-data ──────────────────────────────
