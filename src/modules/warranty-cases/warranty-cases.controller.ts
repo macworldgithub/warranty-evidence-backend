@@ -41,6 +41,12 @@ export class WarrantyCasesController {
     }
   }
 
+  private assertCaseSubmitter(user: UserProfileDto): void {
+    if (user.role !== UserRole.TECHNICIAN && user.role !== UserRole.CLERK) {
+      throw new ForbiddenException('Access denied: Only technicians and assigned Warranty Clerks can submit workshop cases.');
+    }
+  }
+
   @Get()
   @ApiOperation({ summary: 'List and filter warranty cases for Clerk Review Portal & Manager queues' })
   @ApiQuery({ name: 'siteId', required: false, description: 'Filter by dealership rooftop' })
@@ -124,7 +130,7 @@ export class WarrantyCasesController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Start a new warranty ticket (Technicians only)' })
+  @ApiOperation({ summary: 'Start a new warranty ticket (Technicians and assigned Warranty Clerks)' })
   async create(
     @Body() dto: CreateWarrantyCaseDto,
     @Headers('authorization') authHeader?: string,
@@ -132,6 +138,8 @@ export class WarrantyCasesController {
     @Headers('x-user-id') xUserId?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authHeader, xUserId);
+    this.assertCaseSubmitter(currentUser);
+    if (currentUser.role === UserRole.CLERK) this.assertSiteAccess(currentUser, dto.siteId);
     return this.casesService.create(dto, currentUser.role, currentUser.id);
   }
 
@@ -145,7 +153,7 @@ export class WarrantyCasesController {
     @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
-    this.assertTechnician(currentUser);
+    this.assertCaseSubmitter(currentUser);
     await this.assertCaseAccess(currentUser, id);
     return this.casesService.addEvidence(id, dto);
   }
@@ -183,7 +191,7 @@ export class WarrantyCasesController {
     @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
-    this.assertTechnician(currentUser);
+    this.assertCaseSubmitter(currentUser);
     await this.assertCaseAccess(currentUser, id);
     if (!file) throw new BadRequestException('No file received. Send the file as multipart/form-data field named "file".');
     if (!ruleKey) throw new BadRequestException('ruleKey is required.');
@@ -201,7 +209,7 @@ export class WarrantyCasesController {
     @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
-    this.assertTechnician(currentUser);
+    this.assertCaseSubmitter(currentUser);
     await this.assertCaseAccess(currentUser, id);
     return this.casesService.addVoiceNote(id, dto);
   }
@@ -225,7 +233,7 @@ export class WarrantyCasesController {
     @Headers('authorization') authorization?: string,
   ) {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
-    this.assertTechnician(currentUser);
+    this.assertCaseSubmitter(currentUser);
     await this.assertCaseAccess(currentUser, id);
     if (!file) {
       throw new BadRequestException('No audio file received. Send file as multipart/form-data field named "file".');
@@ -243,7 +251,7 @@ export class WarrantyCasesController {
     @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
-    this.assertTechnician(currentUser);
+    this.assertCaseSubmitter(currentUser);
     await this.assertCaseAccess(currentUser, id);
     return this.casesService.submitFromWorkshop(id);
   }

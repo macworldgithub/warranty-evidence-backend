@@ -986,13 +986,13 @@ export class WarrantyCasesService implements OnModuleInit {
   }
 
   async create(dto: CreateWarrantyCaseDto, callerRole?: string, callerUserId?: string): Promise<WarrantyCase> {
-    // Role enforcement: Only technicians can raise warranty tickets
-    if (callerRole && callerRole !== UserRole.TECHNICIAN) {
-      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets.');
+    // Only technicians and assigned warranty clerks may raise workshop warranty tickets.
+    if (callerRole && callerRole !== UserRole.TECHNICIAN && callerRole !== UserRole.CLERK) {
+      throw new ForbiddenException('Access denied: Only technicians and Warranty Clerks are authorized to raise warranty tickets.');
     }
 
-    if (dto.creatorRole && dto.creatorRole !== UserRole.TECHNICIAN) {
-      throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets.');
+    if (dto.creatorRole && dto.creatorRole !== UserRole.TECHNICIAN && dto.creatorRole !== UserRole.CLERK) {
+      throw new ForbiddenException('Access denied: Only technicians and Warranty Clerks are authorized to raise warranty tickets.');
     }
 
     if (callerUserId) {
@@ -1001,11 +1001,14 @@ export class WarrantyCasesService implements OnModuleInit {
         throw new ForbiddenException('Access denied: Only technicians are authorized to raise warranty tickets. Admin accounts cannot create tickets.');
       }
 
-      // Rooftop restriction: technicians may only create tickets for their assigned rooftops
-      if (user && user.role === UserRole.TECHNICIAN) {
+      // Technicians and clerks may create cases only for assigned rooftops.
+      if (user && (user.role === UserRole.TECHNICIAN || user.role === UserRole.CLERK)) {
         const authorized: string[] = user.authorizedSiteIds ?? [];
         const defaultSite: string = (user as any).defaultSiteId ?? '';
         const allAuthorized = authorized.length > 0 ? authorized : (defaultSite ? [defaultSite] : []);
+        if (user.role === UserRole.CLERK && allAuthorized.length === 0) {
+          throw new ForbiddenException('Access denied: Assign this Warranty Clerk to an active rooftop before creating cases.');
+        }
         if (allAuthorized.length > 0 && !allAuthorized.includes(dto.siteId)) {
           throw new ForbiddenException(
             `Access denied: You are not authorised to raise tickets for this rooftop (${dto.siteId}). ` +
