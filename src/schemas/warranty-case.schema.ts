@@ -20,6 +20,9 @@ export class EvidenceItemSubdocument {
   @Prop({ required: true })
   storageUrl: string;
 
+  @Prop({ type: Object })
+  aiAnalysis?: Record<string, any>;
+
   @Prop()
   thumbnailUrl?: string;
 

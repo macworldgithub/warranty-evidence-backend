@@ -1119,6 +1119,7 @@ export class WarrantyCasesService implements OnModuleInit {
     ruleKey: string,
     evidenceName: string,
     ocrExtractedText?: string,
+    aiAnalysis?: Record<string, any>,
   ): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
@@ -1174,6 +1175,7 @@ export class WarrantyCasesService implements OnModuleInit {
       oemFileName: result.oemFileName,
       uploadedAt: new Date().toISOString(),
       ocrExtractedText,
+      aiAnalysis,
       ocrConfidence: ocrExtractedText ? 95 : undefined,
       isVerifiedByClerk: false,
     };

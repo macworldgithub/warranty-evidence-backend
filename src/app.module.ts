@@ -1,3 +1,4 @@
+import { EvidenceAiModule } from './modules/evidence-ai/evidence-ai.module';
 import * as dns from 'dns';
 try {
   dns.setServers(['8.8.8.8', '1.1.1.1']);
@@ -65,6 +66,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     SubmissionPackModule,
     DashboardModule,
     StorageModule,
+    EvidenceAiModule,
     LoanAgreementsModule,
     GeofenceModule,
     TestDrivesModule,

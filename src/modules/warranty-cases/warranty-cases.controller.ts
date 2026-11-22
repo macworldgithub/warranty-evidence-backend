@@ -1,3 +1,4 @@
+import { EvidenceAiService } from '../evidence-ai/evidence-ai.service';
 import { Controller, Get, Post, Body, Param, Query, Headers, ForbiddenException, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -21,6 +22,7 @@ export class WarrantyCasesController {
   constructor(
     private readonly casesService: WarrantyCasesService,
     private readonly authService: AuthService,
+    private readonly evidenceAi: EvidenceAiService,
   ) {}
 
   private assertSiteAccess(user: UserProfileDto, siteId: string) {
@@ -188,6 +190,7 @@ export class WarrantyCasesController {
     @Body('ruleKey') ruleKey: string,
     @Body('evidenceName') evidenceName?: string,
     @Body('ocrExtractedText') ocrExtractedText?: string,
+    @Body('aiAnalysisId') aiAnalysisId?: string,
     @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
@@ -196,7 +199,8 @@ export class WarrantyCasesController {
     if (!file) throw new BadRequestException('No file received. Send the file as multipart/form-data field named "file".');
     if (!ruleKey) throw new BadRequestException('ruleKey is required.');
 
-    return this.casesService.uploadEvidence(id, file, ruleKey, evidenceName ?? ruleKey, ocrExtractedText);
+    const aiAnalysis = aiAnalysisId ? await this.evidenceAi.snapshot(aiAnalysisId, currentUser.id, ruleKey, file.buffer) : undefined;
+    return this.casesService.uploadEvidence(id, file, ruleKey, evidenceName ?? ruleKey, ocrExtractedText, aiAnalysis);
   }
 
   @Post(':id/voice-notes')

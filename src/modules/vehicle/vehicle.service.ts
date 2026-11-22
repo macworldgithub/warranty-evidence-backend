@@ -175,22 +175,7 @@ export class VehicleService {
     const vin = dto.vin.trim().toUpperCase();
     const isValidCheckDigit = this.validateCheckDigit(vin);
 
-    // ── Step 1: Check WMI against known table first ───────────────────────────
-    // NHTSA (mcp.vin) only has records for vehicles registered for US-market sale.
-    // Asian-manufactured brands (BYD, Hyundai, Kia, MG, Chery, Mitsubishi, Nissan,
-    // Isuzu, Suzuki, Škoda, Toyota-Japan/AU) return vehicle:null — skip the API
-    // call entirely for these and use our heuristic table directly.
-    const wmiMatch = this.findWmiMatch(vin);
-    if (wmiMatch) {
-      this.logger.log(
-        `WMI table hit for VIN ${vin} (${vin.substring(0, 3)}) → ${wmiMatch.make} — skipping mcp.vin (NHTSA has no record for this manufacturer)`,
-      );
-      return this.buildHeuristicResponse(vin, wmiMatch, isValidCheckDigit);
-    }
-
-    // ── Step 2: Unknown WMI — try mcp.vin live decode ────────────────────────
-    // Only reached for WMIs not in our table (e.g. future brands, Ford US-built, etc.)
-    this.logger.log(`WMI ${vin.substring(0, 3)} not in heuristic table — attempting mcp.vin decode`);
+    // Try live decoding before using a manufacturer-only fallback.
     try {
       const response = await firstValueFrom(
         this.httpService
@@ -327,7 +312,7 @@ export class VehicleService {
       R: 2024, S: 2025, T: 2026,
     };
 
-    if (vin.length < 10) return new Date().getFullYear();
+    if (vin.length < 10) return 0;
     const char = vin[9].toUpperCase();
 
     // Disambiguate: if position 10 char appears in both maps, use the
@@ -340,7 +325,7 @@ export class VehicleService {
 
     if (modernYear && modernYear <= currentYear + 1) return modernYear;
     if (legacyYear) return legacyYear;
-    return currentYear;
+    return 0;
   }
 
   // ─── ISO 3779 check digit validation (position 9) ────────────────────────

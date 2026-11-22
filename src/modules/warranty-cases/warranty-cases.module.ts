@@ -1,3 +1,4 @@
+import { EvidenceAiModule } from '../evidence-ai/evidence-ai.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WarrantyCasesController } from './warranty-cases.controller';
@@ -22,6 +23,7 @@ import { AuthModule } from '../auth/auth.module';
     BrandsModule,
     NotificationsModule,
     AuthModule,
+    EvidenceAiModule,
     forwardRef(() => VoiceToTechModule),
   ],
   controllers: [WarrantyCasesController],
