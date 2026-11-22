@@ -164,10 +164,33 @@ export class BrandsService implements OnModuleInit {
       },
     ];
 
+    const additionalBrands = [
+      { id: 'brand_geely', name: 'Geely' },
+      { id: 'brand_gac', name: 'GAC' },
+      { id: 'brand_gmsv', name: 'GMSV' },
+      { id: 'brand_isuzu_ute', name: 'Isuzu UTE' },
+      { id: 'brand_lepas', name: 'Lepas' },
+      { id: 'brand_nissan', name: 'Nissan' },
+      { id: 'brand_omoda_jaecoo', name: 'Omoda Jaecoo' },
+      { id: 'brand_skoda', name: 'Škoda' },
+      { id: 'brand_suzuki', name: 'Suzuki' },
+      { id: 'brand_xpeng', name: 'XPENG' },
+    ];
+    for (const brand of additionalBrands) {
+      defaultBrands.push({
+        ...brand,
+        code: brand.id.slice('brand_'.length).toUpperCase(),
+        description: brand.name + ' vehicle evidence collection',
+        seedChecklistReference: 'Tier 1 Common Pack',
+        activeBrandPackId: 'brandpack_common_v1',
+        isActive: true,
+      });
+    }
+
     for (const brand of defaultBrands) {
       await this.brandModel.updateOne(
         { id: brand.id },
-        { $set: brand },
+        { $setOnInsert: brand },
         { upsert: true },
       );
     }
@@ -175,7 +198,7 @@ export class BrandsService implements OnModuleInit {
   }
 
   async findAll(): Promise<Brand[]> {
-    return this.brandModel.find().lean();
+    return this.brandModel.find().sort({ name: 1 }).lean();
   }
 
   async findOne(id: string): Promise<Brand> {
