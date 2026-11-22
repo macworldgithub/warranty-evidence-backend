@@ -1,3 +1,4 @@
+import { VehicleInspectionsModule } from './modules/vehicle-inspections/vehicle-inspections.module';
 import { EvidenceAiModule } from './modules/evidence-ai/evidence-ai.module';
 import * as dns from 'dns';
 try {
@@ -67,6 +68,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     DashboardModule,
     StorageModule,
     EvidenceAiModule,
+    VehicleInspectionsModule,
     LoanAgreementsModule,
     GeofenceModule,
     TestDrivesModule,
