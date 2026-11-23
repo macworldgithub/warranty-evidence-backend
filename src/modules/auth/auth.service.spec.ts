@@ -1,5 +1,6 @@
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
-import { AuthService, CreateUserDto } from './auth.service';
+import { AuthService, CreateUserDto, SignupDto } from './auth.service';
+import { validate } from 'class-validator';
 import { UserRole } from '../../common/enums';
 
 jest.mock('@nestjs/mongoose', () => ({
@@ -10,6 +11,70 @@ jest.mock('@nestjs/mongoose', () => ({
 }));
 
 describe('AuthService session and clerk access rules', () => {
+  function registrationService(existing: unknown = null, saveError?: unknown) {
+    let saved: any;
+    const model = Object.assign(jest.fn().mockImplementation(data => ({
+      save: jest.fn(async () => {
+        if (saveError) throw saveError;
+        saved = data;
+        return { toObject: () => data };
+      }),
+    })), {
+      findOne: jest.fn(() => ({ lean: async () => saved || existing })),
+    });
+    const service = new AuthService(model as never, {} as never, {} as never, {} as never);
+    jest.spyOn(service, 'verifyWorkshopPin').mockResolvedValue(undefined);
+    return { service, model, saved: () => saved };
+  }
+
+  const signup = { name: 'Staff Example', username: '001234', password: 'test-password', workshopPin: '0000', role: UserRole.ADMIN, siteId: 'site_a' };
+
+  it.each(['001234', 'Jake.Smith'])('registers %s without email and supports subsequent sign-in', async username => {
+    const { service, saved } = registrationService();
+    const result = await service.signup({ ...signup, username: ` ${username} ` });
+    expect(result.user).toMatchObject({ username: username.toLowerCase(), role: UserRole.TECHNICIAN, defaultSiteId: 'site_a', authorizedSiteIds: ['site_a'] });
+    expect(saved().passwordHash).toMatch(/^scrypt:/);
+    expect(saved().passwordHash).not.toBe(signup.password);
+    await expect(service.login({ email: username.toUpperCase(), password: signup.password })).resolves.toMatchObject({ user: { id: result.user.id } });
+    await expect(service.login({ email: username, password: 'incorrect' })).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects duplicate identifiers after case normalization, including inactive accounts', async () => {
+    const { service, model } = registrationService({ username: 'jake.smith', isActive: false });
+    await expect(service.signup({ ...signup, username: 'JAKE.SMITH' })).rejects.toThrow('This username or employee number is already in use.');
+    expect(model.findOne).toHaveBeenCalledWith({ $or: [{ username: 'jake.smith' }, { email: 'jake.smith@staff.booran.invalid' }] });
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it('converts a database duplicate from a simultaneous registration to a useful error', async () => {
+    const { service } = registrationService(null, { code: 11000 });
+    await expect(service.signup(signup)).rejects.toThrow('This username or employee number is already in use.');
+  });
+
+  it.each(['ab', 'staff name', 'staff@example.com', 'x'.repeat(41)])('rejects invalid identifier %s', async username => {
+    const { service, model } = registrationService();
+    await expect(service.signup({ ...signup, username })).rejects.toBeInstanceOf(BadRequestException);
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy email registration and sign-in working', async () => {
+    const { service } = registrationService();
+    const result = await service.signup({ ...signup, username: undefined, email: 'existing@example.com' });
+    expect(result.user.email).toBe('existing@example.com');
+    await expect(service.login({ email: result.user.email, password: signup.password })).resolves.toMatchObject({ user: { id: result.user.id } });
+  });
+
+  it('requires the PIN before creating a username account', async () => {
+    const { service, model } = registrationService();
+    jest.spyOn(service, 'verifyWorkshopPin').mockRejectedValue(new UnauthorizedException());
+    await expect(service.signup(signup)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it('accepts username-only signup through DTO validation', async () => {
+    expect(await validate(Object.assign(new SignupDto(), signup))).toEqual([]);
+  });
+
   const activeAdmin = {
     id: 'usr_admin_1',
     name: 'Admin User',

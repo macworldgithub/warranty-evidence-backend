@@ -107,9 +107,15 @@ export class SignupDto extends WorkshopPinDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ example: 'david.miller@booran.com.au' })
+  @ApiPropertyOptional({ example: 'david.miller@booran.com.au' })
+  @IsOptional()
   @IsEmail()
-  email: string;
+  email?: string;
+
+  @ApiPropertyOptional({ example: '001234', description: 'Unique username or employee number' })
+  @IsOptional()
+  @IsString()
+  username?: string;
 
   @ApiProperty({ example: 'Booran2026!' })
   @IsString()
@@ -289,6 +295,8 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Enforce uniqueness before accepting registrations, including simultaneous requests.
+    await this.userModel.collection.createIndex({ username: 1 }, { unique: true, sparse: true });
     try {
       const indexes = await this.userModel.collection.indexes();
       if (indexes.some((idx) => idx.name === 'supabaseUserId_1')) {
@@ -533,9 +541,25 @@ export class AuthService implements OnModuleInit {
 
   async signup(dto: SignupDto): Promise<LoginResponseDto> {
     await this.verifyWorkshopPin(dto.workshopPin);
-    const existing = await this.userModel.findOne({ email: dto.email.toLowerCase().trim() }).lean();
+    const username = dto.username?.trim().toLowerCase();
+    const suppliedEmail = dto.email?.trim().toLowerCase();
+    if (!!username === !!suppliedEmail) {
+      throw new BadRequestException('Enter a username or employee number, or an email address.');
+    }
+    if (username && !/^[a-z0-9][a-z0-9_.-]{2,39}$/.test(username)) {
+      throw new BadRequestException('Username or employee number must be 3–40 letters, digits, dots, underscores, or hyphens.');
+    }
+    if (suppliedEmail?.endsWith('@staff.booran.invalid')) {
+      throw new BadRequestException('Please use your work email address.');
+    }
+    if (!dto.name?.trim() || dto.name.trim().length > 150 || !dto.password || dto.password.length < 6 || dto.password.length > 1024) {
+      throw new BadRequestException('Enter your full name and a password of 6–1024 characters.');
+    }
+    // Match the username account representation already used by staff QR registration.
+    const email = suppliedEmail || `${username}@staff.booran.invalid`;
+    const existing = await this.userModel.findOne(username ? { $or: [{ username }, { email }] } : { email }).lean();
     if (existing) {
-      throw new BadRequestException('An account with this email address already exists.');
+      throw new BadRequestException(username ? 'This username or employee number is already in use.' : 'An account with this email address already exists.');
     }
 
     // Public registration is restricted to Workshop Technicians
@@ -544,21 +568,31 @@ export class AuthService implements OnModuleInit {
 
     const newUser = new this.userModel({
       id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      name: dto.name,
-      email: dto.email.toLowerCase().trim(),
-      passwordHash: dto.password,
+      name: dto.name.trim(),
+      email,
+      ...(username ? { username } : {}),
+      passwordHash: await hashQrPassword(dto.password),
       role,
       defaultSiteId: siteId,
       authorizedSiteIds: [siteId],
       isActive: true,
     });
 
-    const saved = (await newUser.save()).toObject();
+    let saved: User;
+    try {
+      saved = (await newUser.save()).toObject();
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        throw new BadRequestException(username ? 'This username or employee number is already in use.' : 'An account with this email address already exists.');
+      }
+      throw error;
+    }
 
     const profile: UserProfileDto = {
       id: saved.id,
       name: saved.name,
       email: saved.email,
+      username: saved.username,
       role: saved.role as UserRole,
       defaultSiteId: saved.defaultSiteId,
       authorizedSiteIds: saved.authorizedSiteIds,
