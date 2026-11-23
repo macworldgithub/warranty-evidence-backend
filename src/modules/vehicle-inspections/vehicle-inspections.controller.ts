@@ -20,8 +20,15 @@ export class VehicleInspectionsController implements OnModuleInit {
   @Get()
   async list(@Query('vin') vin: string, @Query('siteId') siteId: string, @Headers('authorization') authorization?: string) {
     await this.user(authorization, siteId);
-    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin || '')) throw new BadRequestException('A valid VIN is required.');
-    return this.collection().find({ vin, siteId }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
+    if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) throw new BadRequestException('A valid VIN is required.');
+    const filter = vin ? { vin, siteId } : { siteId };
+    const projection = vin ? { _id: 0 as const } : {
+      _id: 0 as const, 'inspection.vin': 1 as const, 'inspection.siteId': 1 as const,
+      'inspection.roNumber': 1 as const, 'inspection.rego': 1 as const,
+      'inspection.vehicleDetails': 1 as const, 'inspection.odometer': 1 as const,
+      'inspection.updatedAt': 1 as const,
+    };
+    return this.collection().find(filter, { projection }).sort({ createdAt: -1 }).toArray();
   }
   @Post()
   async save(@Body() dto: InspectionInput, @Headers('authorization') authorization?: string) {
@@ -33,6 +40,7 @@ export class VehicleInspectionsController implements OnModuleInit {
     if (previous?.inspection?.status === 'COMPLETE') return previous;
     const input = dto.inspection;
     const evidenceItems = (Array.isArray(input.evidenceItems) ? input.evidenceItems : []).map((item: any) => ({
+      id: typeof item.id === 'string' ? item.id : undefined,
       ruleKey: String(item.ruleKey || ''), ruleName: String(item.ruleName || item.name || item.ruleKey || ''),
       mediaType: item.mediaType, storageUrl: /^(https?:\/\/|\/uploads\/)/.test(item.storageUrl || item.serverUrl || '') ? item.storageUrl || item.serverUrl : '',
       capturedAt: item.capturedAt, ocrExtractedText: item.ocrExtractedText, notes: item.notes,
@@ -42,6 +50,7 @@ export class VehicleInspectionsController implements OnModuleInit {
     const now = new Date().toISOString();
     const record = { vin: dto.vin, siteId: dto.siteId, updatedAt: now, inspection: {
       vin: dto.vin, siteId: dto.siteId, vehicleDetails: input.vehicleDetails, roNumber: input.roNumber,
+      rego: input.rego, odometer: input.odometer,
       brandId: input.brandId, brandPackId: input.brandPackId, brandPackVersion: input.brandPackVersion,
       capturedZoneKeys: input.capturedZoneKeys, defects: input.defects, voiceNotes: input.voiceNotes,
       status: input.status, evidenceItems, updatedAt: now,

@@ -124,15 +124,25 @@ export class HoistsService implements OnModuleInit {
     await this.hoistModel.updateOne({ id: 'hoist_sm_bk_12' }, { $set: { isActive: false } });
   }
 
+  private activeHoistFilter() {
+    return {
+      isActive: true,
+      $or: [
+        { facility: 'southland', hoistNumber: { $gte: 1 } },
+        { facility: { $ne: 'southland' }, hoistNumber: { $gte: 1, $lte: 11 } },
+      ],
+    };
+  }
+
   async findAll(facility?: string, siteId?: string): Promise<Hoist[]> {
-    const filter: any = { isActive: true, hoistNumber: { $gte: 1, $lte: 11 } };
+    const filter: any = this.activeHoistFilter();
     if (facility && facility !== 'all') {
       filter.facility = facility;
     }
     if (siteId) {
       filter.siteId = siteId;
     }
-    return this.hoistModel.find(filter).sort({ facility: 1, hoistNumber: 1 }).lean();
+    return this.hoistModel.find(filter).sort({ facility: 1, facilityName: 1, hoistNumber: 1 }).lean();
   }
 
   async findOne(id: string): Promise<Hoist> {
@@ -144,7 +154,7 @@ export class HoistsService implements OnModuleInit {
   }
 
   async getSummary(facility?: string) {
-    const filter: any = { isActive: true, hoistNumber: { $gte: 1, $lte: 11 } };
+    const filter: any = this.activeHoistFilter();
     if (facility && facility !== 'all') {
       filter.facility = facility;
     }
@@ -252,7 +262,7 @@ export class HoistsService implements OnModuleInit {
     const vehicleRego = dto.vehicleRego?.trim().toUpperCase();
     if (!jobNumber && !vehicleRego) throw new BadRequestException('Enter a job / RO number or vehicle registration.');
     const assigned = await this.hoistModel.findOneAndUpdate({
-      id, isActive: true, hoistNumber: { $gte: 1, $lte: 11 }, status: 'OPERATIONAL',
+      id, ...this.activeHoistFilter(), status: 'OPERATIONAL',
       lockoutTagoutActive: { $ne: true }, assignment: null,
     }, { $set: { assignment: { id: randomUUID(), jobNumber, vehicleRego, assignedBy: staffId, assignedAt: new Date().toISOString() } } }, { returnDocument: 'after' }).lean();
     if (!assigned) throw new ConflictException('This hoist is occupied, inactive or unavailable. Refresh and choose an operational hoist.');

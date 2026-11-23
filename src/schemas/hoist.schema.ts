@@ -26,7 +26,7 @@ export class Hoist {
   @Prop({ required: true })
   name: string;
 
-  @Prop({ required: true, enum: ['hyundai_chery', 'byd_kia', 'general'], default: 'hyundai_chery' })
+  @Prop({ required: true, enum: ['hyundai_chery', 'byd_kia', 'general', 'southland'], default: 'hyundai_chery' })
   facility: string;
 
   @Prop({ required: true })

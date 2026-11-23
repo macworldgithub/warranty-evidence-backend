@@ -16,15 +16,35 @@ const uploaded = VEHICLE_PHOTO_CATEGORIES.filter(photo => photo.isMandatory).map
   ruleKey: photo.ruleKey, mediaType: 'image', storageUrl: '/uploads/' + photo.ruleKey + '.jpg',
 }));
 function setup(evidenceItems: any[]) {
-  const document: any = { id: 'case', status: 'Uploading', evidenceItems, flagHistory: [], checklistSummary: {}, markModified: jest.fn() };
+  const document: any = { roNumber: 'RO123', id: 'case', status: 'Uploading', evidenceItems, flagHistory: [], checklistSummary: {}, markModified: jest.fn() };
   document.save = jest.fn().mockResolvedValue({ toObject: () => document });
   const service = new WarrantyCasesService(
     { findOne: jest.fn().mockResolvedValue(document) } as never,
     { find: () => ({ lean: async () => [] }) } as never,
-    {} as never, {} as never, { sendNewTicketRaisedAlert: async () => undefined, sendNewTicketPushToAdmins: async () => undefined } as never, {} as never, {} as never,
+    {} as never, { uploadFile: async (_buffer: Buffer, _mime: string, filename: string) => ({
+      url: '/uploads/' + filename, oemFileName: filename,
+    }) } as never, { sendNewTicketRaisedAlert: async () => undefined, sendNewTicketPushToAdmins: async () => undefined } as never, {} as never, {} as never,
   );
   return { service, document };
 }
+describe('defect photo uploads', () => {
+  it.each([
+    ['fault_closeup', 'FaultCloseup'],
+    ['fault_location', 'FaultLocation'],
+  ])('stores separate %s photos and updates only the photo with the same ID', async (ruleKey, descriptor) => {
+    const { service, document } = setup([]);
+    const file = { buffer: Buffer.from('photo'), mimetype: 'image/jpeg' } as Express.Multer.File;
+    await service.uploadEvidence('case', file, ruleKey, 'First', undefined, undefined, 'photo-1');
+    await service.uploadEvidence('case', file, ruleKey, 'Second', undefined, undefined, 'photo-2');
+    await service.uploadEvidence('case', file, ruleKey, 'Retake', undefined, undefined, 'photo-1');
+
+    expect(document.evidenceItems.map(({ id, name, storageUrl }) => ({ id, name, storageUrl }))).toEqual([
+      { id: 'photo-1', name: 'Retake', storageUrl: `/uploads/RO123${descriptor}_photo-1.jpg` },
+      { id: 'photo-2', name: 'Second', storageUrl: `/uploads/RO123${descriptor}_photo-2.jpg` },
+    ]);
+  });
+});
+
 describe('server vehicle photo completion gates', () => {
   it.each(VEHICLE_PHOTO_CATEGORIES.filter(photo => photo.isMandatory))('blocks workshop submission without $name', async photo => {
     const { service, document } = setup(uploaded.filter(item => item.ruleKey !== photo.ruleKey));

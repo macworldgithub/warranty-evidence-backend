@@ -4,6 +4,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException,
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as path from 'path';
+import { randomUUID } from 'node:crypto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNumber, IsBoolean, IsEnum, IsOptional } from 'class-validator';
 import { CaseStatus, FaultCategory, FlagReasonCode, MediaType, PowertrainType, RepairStage, UserRole } from '../../common/enums';
@@ -15,6 +16,9 @@ import { SitesService } from '../sites/sites.service';
 import { WarrantyCase, WarrantyCaseDocument } from '../../schemas/warranty-case.schema';
 import { User, UserDocument } from '../../schemas/user.schema';
 import { PaginatedResponse } from '../../common/dto/pagination.dto';
+
+const allowsMultipleEvidencePhotos = (ruleKey: string) =>
+  ruleKey === 'fault_closeup' || ruleKey === 'fault_location';
 
 export class CreateWarrantyCaseDto {
   @ApiProperty({ example: 'site_cranbourne_byd' })
@@ -110,6 +114,11 @@ export class CreateWarrantyCaseDto {
 }
 
 export class AddEvidenceDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  evidenceId?: string;
+
   @ApiProperty({ example: 'vin_photo' })
   @IsString()
   ruleKey: string;
@@ -1120,6 +1129,7 @@ export class WarrantyCasesService implements OnModuleInit {
     evidenceName: string,
     ocrExtractedText?: string,
     aiAnalysis?: Record<string, any>,
+    evidenceId?: string,
   ): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
@@ -1146,7 +1156,13 @@ export class WarrantyCasesService implements OnModuleInit {
       .split('_')
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join('');
-    const oemFileName = `${warrantyCase.roNumber}${descriptor}.${ext}`;
+    const allowsMultiplePhotos = allowsMultipleEvidencePhotos(ruleKey);
+    if (allowsMultiplePhotos && !file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('Defect photos must be images.');
+    }
+    const photoId = allowsMultiplePhotos ? this.defectPhotoId(evidenceId) : undefined;
+    const suffix = photoId ? `_${photoId}` : '';
+    const oemFileName = `${warrantyCase.roNumber}${descriptor}${suffix}.${ext}`;
 
     // Determine mediaType enum
     const mediaTypeMap: Record<string, string> = {
@@ -1166,7 +1182,7 @@ export class WarrantyCasesService implements OnModuleInit {
 
     // Build evidence subdoc
     const newEvidence: any = {
-      id: `ev_${Date.now()}`,
+      id: photoId || `ev_${Date.now()}`,
       ruleKey,
       name: evidenceName || oemFileName,
       mediaType,
@@ -1180,8 +1196,7 @@ export class WarrantyCasesService implements OnModuleInit {
       isVerifiedByClerk: false,
     };
 
-    // Replace existing evidence for same ruleKey or append
-    const existingIdx = warrantyCase.evidenceItems.findIndex((e) => e.ruleKey === ruleKey);
+    const existingIdx = warrantyCase.evidenceItems.findIndex(e => e.ruleKey === ruleKey && (!allowsMultiplePhotos || e.id === photoId));
     if (existingIdx >= 0) {
       warrantyCase.evidenceItems[existingIdx] = newEvidence;
     } else {
@@ -1258,12 +1273,25 @@ export class WarrantyCasesService implements OnModuleInit {
     return savedCase;
   }
 
+  private defectPhotoId(evidenceId?: string): string {
+    if (evidenceId === undefined) return randomUUID();
+    if (typeof evidenceId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(evidenceId)) {
+      throw new BadRequestException('Invalid defect photo ID.');
+    }
+    return evidenceId;
+  }
+
   async addEvidence(caseId: string, dto: AddEvidenceDto): Promise<WarrantyCase> {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
+    const allowsMultiplePhotos = allowsMultipleEvidencePhotos(dto.ruleKey);
+    if (allowsMultiplePhotos && dto.mediaType !== MediaType.IMAGE) {
+      throw new BadRequestException('Defect photos must be images.');
+    }
+    const photoId = allowsMultiplePhotos ? this.defectPhotoId(dto.evidenceId) : undefined;
     const newEvidence = {
-      id: `ev_${Date.now()}`,
+      id: photoId || `ev_${Date.now()}`,
       ruleKey: dto.ruleKey,
       name: dto.name,
       mediaType: dto.mediaType,
@@ -1275,7 +1303,7 @@ export class WarrantyCasesService implements OnModuleInit {
       isVerifiedByClerk: false,
     };
 
-    const existingIdx = warrantyCase.evidenceItems.findIndex((e) => e.ruleKey === dto.ruleKey);
+    const existingIdx = warrantyCase.evidenceItems.findIndex((e) => e.ruleKey === dto.ruleKey && (!allowsMultiplePhotos || e.id === photoId));
     if (existingIdx >= 0) {
       warrantyCase.evidenceItems[existingIdx] = newEvidence as any;
     } else {

@@ -173,6 +173,7 @@ export class WarrantyCasesController {
       properties: {
         file: { type: 'string', format: 'binary', description: 'Evidence file (JPEG/PNG/WebP/MP4/WebM/PDF)' },
         ruleKey: { type: 'string', example: 'fault_closeup', description: 'Brand Pack rule key this file satisfies' },
+        evidenceId: { type: 'string', description: 'Stable photo ID for a defect close-up or location photo' },
         evidenceName: { type: 'string', example: 'Fault Close-up Photo', description: 'Human-readable label (optional)' },
         ocrExtractedText: { type: 'string', example: 'LGXCE4C86P0019283', description: 'OCR text extracted on device (optional)' },
       },
@@ -191,6 +192,7 @@ export class WarrantyCasesController {
     @Body('evidenceName') evidenceName?: string,
     @Body('ocrExtractedText') ocrExtractedText?: string,
     @Body('aiAnalysisId') aiAnalysisId?: string,
+    @Body('evidenceId') evidenceId?: string,
     @Headers('authorization') authorization?: string,
   ): Promise<WarrantyCase> {
     const currentUser = await this.authService.resolveUserFromAuthorization(authorization);
@@ -200,7 +202,7 @@ export class WarrantyCasesController {
     if (!ruleKey) throw new BadRequestException('ruleKey is required.');
 
     const aiAnalysis = aiAnalysisId ? await this.evidenceAi.snapshot(aiAnalysisId, currentUser.id, ruleKey, file.buffer) : undefined;
-    return this.casesService.uploadEvidence(id, file, ruleKey, evidenceName ?? ruleKey, ocrExtractedText, aiAnalysis);
+    return this.casesService.uploadEvidence(id, file, ruleKey, evidenceName ?? ruleKey, ocrExtractedText, aiAnalysis, evidenceId);
   }
 
   @Post(':id/voice-notes')

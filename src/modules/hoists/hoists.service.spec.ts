@@ -44,7 +44,11 @@ describe('numbered workshop hoists', () => {
     model.findOneAndUpdate.mockReturnValue({ lean: async () => ({ id: 'hoist' }) });
     await service.assign('hoist', { jobNumber: ' RO123 ', vehicleRego: ' abc123 ' }, 'staff');
     expect(model.findOneAndUpdate).toHaveBeenCalledWith({
-      id: 'hoist', isActive: true, hoistNumber: { $gte: 1, $lte: 11 }, status: 'OPERATIONAL',
+      id: 'hoist', isActive: true, status: 'OPERATIONAL',
+      $or: [
+        { facility: 'southland', hoistNumber: { $gte: 1 } },
+        { facility: { $ne: 'southland' }, hoistNumber: { $gte: 1, $lte: 11 } },
+      ],
       lockoutTagoutActive: { $ne: true }, assignment: null,
     }, { $set: { assignment: expect.objectContaining({ jobNumber: 'RO123', vehicleRego: 'ABC123', assignedBy: 'staff' }) } }, { returnDocument: 'after' });
   });

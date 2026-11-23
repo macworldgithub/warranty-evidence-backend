@@ -34,7 +34,7 @@ export class HoistInspection {
   @Prop({ required: true })
   hoistNumber: number;
 
-  @Prop({ required: true, enum: ['hyundai_chery', 'byd_kia', 'general'] })
+  @Prop({ required: true, enum: ['hyundai_chery', 'byd_kia', 'general', 'southland'] })
   facility: string;
 
   @Prop({ required: true })
