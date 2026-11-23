@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException, NotFoundExcepti
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsEmail, IsEnum, IsOptional, IsArray, ArrayUnique } from 'class-validator';
+import { IsString, IsEmail, IsEnum, IsOptional, IsArray, ArrayUnique, ArrayMinSize, ArrayMaxSize } from 'class-validator';
 import { UserRole } from '../../common/enums';
 import { User, UserDocument } from '../../schemas/user.schema';
 import { Otp, OtpDocument } from '../../schemas/otp.schema';
@@ -129,6 +129,15 @@ export class SignupDto extends WorkshopPinDto {
   @IsOptional()
   @IsString()
   siteId?: string;
+
+  @ApiPropertyOptional({ example: ['site_cranbourne_byd', 'site_dandenong_multi'] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsString({ each: true })
+  authorizedSiteIds?: string[];
 }
 
 export class CreateUserDto {
@@ -564,7 +573,16 @@ export class AuthService implements OnModuleInit {
 
     // Public registration is restricted to Workshop Technicians
     const role = UserRole.TECHNICIAN;
-    const siteId = dto.siteId || 'site_cranbourne_byd';
+    const siteIds = dto.authorizedSiteIds ?? [dto.siteId || 'site_cranbourne_byd'];
+    if (!Array.isArray(siteIds) || !siteIds.length || siteIds.length > 50 ||
+        siteIds.some(id => typeof id !== 'string' || !id.trim()) || new Set(siteIds).size !== siteIds.length) {
+      throw new BadRequestException('Select between 1 and 50 distinct dealership sites.');
+    }
+    const siteId = dto.siteId || siteIds[0];
+    if (!siteIds.includes(siteId)) {
+      throw new BadRequestException('The primary dealership must be one of the selected sites.');
+    }
+    await this.assertSitesAreActive(siteIds);
 
     const newUser = new this.userModel({
       id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -574,7 +592,7 @@ export class AuthService implements OnModuleInit {
       passwordHash: await hashQrPassword(dto.password),
       role,
       defaultSiteId: siteId,
-      authorizedSiteIds: [siteId],
+      authorizedSiteIds: siteIds,
       isActive: true,
     });
 

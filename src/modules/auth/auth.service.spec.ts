@@ -22,12 +22,46 @@ describe('AuthService session and clerk access rules', () => {
     })), {
       findOne: jest.fn(() => ({ lean: async () => saved || existing })),
     });
-    const service = new AuthService(model as never, {} as never, {} as never, {} as never);
+    const sites = { countDocuments: jest.fn(async query => query.id.$in.length) };
+    const service = new AuthService(model as never, {} as never, sites as never, {} as never);
     jest.spyOn(service, 'verifyWorkshopPin').mockResolvedValue(undefined);
-    return { service, model, saved: () => saved };
+    return { service, model, sites, saved: () => saved };
   }
 
   const signup = { name: 'Staff Example', username: '001234', password: 'test-password', workshopPin: '0000', role: UserRole.ADMIN, siteId: 'site_a' };
+
+  it('saves every selected rooftop and retains them on later sign-in', async () => {
+    const { service, saved, sites } = registrationService();
+    const result = await service.signup({ ...signup, authorizedSiteIds: ['site_a', 'site_b', 'site_c'] });
+    expect(result.user).toMatchObject({ defaultSiteId: 'site_a', authorizedSiteIds: ['site_a', 'site_b', 'site_c'] });
+    expect(saved().authorizedSiteIds).toEqual(['site_a', 'site_b', 'site_c']);
+    expect(sites.countDocuments).toHaveBeenCalledWith({ id: { $in: ['site_a', 'site_b', 'site_c'] }, isActive: true });
+    await expect(service.login({ email: signup.username, password: signup.password })).resolves.toMatchObject({ user: { authorizedSiteIds: ['site_a', 'site_b', 'site_c'] } });
+  });
+
+  it('uses the first selected rooftop when no primary site is supplied', async () => {
+    const { service } = registrationService();
+    await expect(service.signup({ ...signup, siteId: undefined, authorizedSiteIds: ['site_b', 'site_c'] })).resolves.toMatchObject({ user: { defaultSiteId: 'site_b' } });
+  });
+
+  it('rejects missing or inactive rooftops before saving the account', async () => {
+    const { service, model, sites } = registrationService();
+    sites.countDocuments.mockResolvedValue(1);
+    await expect(service.signup({ ...signup, authorizedSiteIds: ['site_a', 'missing_site'] })).rejects.toThrow('Every assigned dealership site must exist and be active.');
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it.each([[], ['site_a', 'site_a'], ['site_b'], ['site_a', '']].map(authorizedSiteIds => ({ authorizedSiteIds })))('rejects invalid rooftop selections $authorizedSiteIds', async ({ authorizedSiteIds }) => {
+    const { service, model } = registrationService();
+    await expect(service.signup({ ...signup, authorizedSiteIds })).rejects.toBeInstanceOf(BadRequestException);
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it('keeps multiple rooftops through DTO whitelisting', async () => {
+    const dto = Object.assign(new SignupDto(), signup, { authorizedSiteIds: ['site_a', 'site_b'] });
+    expect(await validate(dto, { whitelist: true })).toEqual([]);
+    expect(dto.authorizedSiteIds).toEqual(['site_a', 'site_b']);
+  });
 
   it.each(['001234', 'Jake.Smith'])('registers %s without email and supports subsequent sign-in', async username => {
     const { service, saved } = registrationService();
