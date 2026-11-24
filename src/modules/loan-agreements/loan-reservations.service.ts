@@ -43,19 +43,25 @@ export class LoanReservationsService implements OnModuleInit {
     if (!dto.customerName?.trim() || !dto.customerMobile?.trim()) {
       throw new BadRequestException('Customer name and mobile are required.');
     }
+    const rego = dto.rego?.trim().toUpperCase();
+    if (!rego || rego.length > 20) {
+      throw new BadRequestException('Enter a vehicle registration (up to 20 characters) or TBA.');
+    }
     const booking = {
       id: randomUUID(), loanerNumber: dto.loanerNumber,
       customerName: dto.customerName.trim(), customerMobile: dto.customerMobile.trim(),
+      rego,
       startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), status: 'RESERVED',
     };
     // A site document already exists. The conditional push is atomic across all six loaners.
     const result = await this.sites.updateOne({ id: dto.siteId, loanReservations: { $not: { $elemMatch: {
-      loanerNumber: dto.loanerNumber, status: { $in: ['RESERVED', 'ISSUED'] },
+      ...(rego === 'TBA' ? { loanerNumber: dto.loanerNumber } : { $or: [{ loanerNumber: dto.loanerNumber }, { rego }] }),
+      status: { $in: ['RESERVED', 'ISSUED'] },
       startAt: { $lt: booking.endAt }, endAt: { $gt: booking.startAt },
     } } } }, { $push: { loanReservations: booking } }, { runValidators: true });
     if (!result.modifiedCount) {
       if (!await this.sites.exists({ id: dto.siteId })) throw new NotFoundException('Dealership site not found.');
-      throw new ConflictException('This loan vehicle is already reserved for those times.');
+      throw new ConflictException('This loan vehicle or registration is already reserved for those times.');
     }
     return { ...booking, siteId: dto.siteId, loanerName: `GWM LOAN ${dto.loanerNumber}` };
   }
@@ -74,6 +80,9 @@ export class LoanReservationsService implements OnModuleInit {
   }
 
   async claim(id: string, siteId: string, agreementId: string, rego: string, startAt: string, endAt: string) {
+    if (!rego?.trim() || rego.trim().toUpperCase() === 'TBA') {
+      throw new BadRequestException('Enter the actual vehicle registration before handover.');
+    }
     const booking = await this.find(id);
     if (booking.siteId !== siteId || booking.startAt !== startAt || booking.endAt !== endAt) {
       throw new BadRequestException('Use the reserved site and booking times when issuing this loaner.');
@@ -84,10 +93,10 @@ export class LoanReservationsService implements OnModuleInit {
     return booking;
   }
 
-  async releaseClaim(agreementId: string) {
+  async releaseClaim(agreementId: string, reservedRego = 'TBA') {
     await this.sites.updateOne({ 'loanReservations.agreementId': agreementId }, {
-      $set: { 'loanReservations.$.status': 'RESERVED' },
-      $unset: { 'loanReservations.$.agreementId': '', 'loanReservations.$.rego': '' },
+      $set: { 'loanReservations.$.status': 'RESERVED', 'loanReservations.$.rego': reservedRego },
+      $unset: { 'loanReservations.$.agreementId': '' },
     });
   }
 

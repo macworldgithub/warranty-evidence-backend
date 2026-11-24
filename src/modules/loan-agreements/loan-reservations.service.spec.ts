@@ -15,7 +15,7 @@ jest.mock('@nestjs/mongoose', () => ({
 describe('loan vehicle reservations', () => {
   const startAt = '2030-01-01T09:00:00.000Z';
   const endAt = '2030-01-01T17:00:00.000Z';
-  const dto = { siteId: 'gwm', loanerNumber: 1, customerName: 'Customer', customerMobile: '0412345678', startAt, endAt };
+  const dto = { siteId: 'gwm', loanerNumber: 1, customerName: 'Customer', customerMobile: '0412345678', rego: 'TBA', startAt, endAt };
   function setup() {
     const record = { id: 'gwm', loanReservations: [{ ...dto, id: 'booking', status: 'RESERVED' }] };
     const query = (value: unknown) => ({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(value) }) });
@@ -28,14 +28,44 @@ describe('loan vehicle reservations', () => {
     };
     return { model, service: new LoanReservationsService(model as never) };
   }
-  it('reserves a named slot without a registration or VIN', async () => {
+  it('reserves a named slot with TBA before the actual car is assigned', async () => {
     const { model, service } = setup();
     const booking = await service.reserve(dto);
     expect(booking).toMatchObject({ loanerName: 'GWM LOAN 1', status: 'RESERVED', startAt, endAt });
-    expect(booking).not.toHaveProperty('rego');
+    expect(booking.rego).toBe('TBA');
     expect(model.updateOne).toHaveBeenLastCalledWith({ id: 'gwm', loanReservations: { $not: { $elemMatch: {
       loanerNumber: 1, status: { $in: ['RESERVED', 'ISSUED'] }, startAt: { $lt: endAt }, endAt: { $gt: startAt },
     } } } }, { $push: { loanReservations: expect.objectContaining({ id: expect.any(String) }) } }, { runValidators: true });
+  });
+  it('normalizes a known registration and checks it atomically as well as the slot', async () => {
+    const { model, service } = setup();
+    const booking = await service.reserve({ ...dto, rego: ' abc123 ' });
+    expect(booking.rego).toBe('ABC123');
+    expect(model.updateOne.mock.calls[0][0].loanReservations.$not.$elemMatch).toMatchObject({
+      $or: [{ loanerNumber: 1 }, { rego: 'ABC123' }], startAt: { $lt: endAt }, endAt: { $gt: startAt },
+    });
+  });
+  it('requires a registration or explicit TBA and rejects invalid registration values', async () => {
+    const { model, service } = setup();
+    for (const rego of [undefined, '', '   ', 'X'.repeat(21)]) {
+      expect((await validate(plainToInstance(ReserveLoanerDto, { ...dto, rego }))).length).toBeGreaterThan(0);
+      await expect(service.reserve({ ...dto, rego: rego as string })).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(model.updateOne).not.toHaveBeenCalled();
+    expect(await validate(plainToInstance(ReserveLoanerDto, { ...dto, rego: ' tba ' }))).toHaveLength(0);
+  });
+  it('requires an actual registration at handover', async () => {
+    const { model, service } = setup();
+    await expect(service.claim('booking', 'gwm', 'agreement', ' TBA ', startAt, endAt)).rejects.toBeInstanceOf(BadRequestException);
+    expect(model.updateOne).not.toHaveBeenCalled();
+  });
+  it('restores the booked registration if agreement creation fails after claiming', async () => {
+    const { model, service } = setup();
+    await service.releaseClaim('agreement', 'ABC123');
+    expect(model.updateOne).toHaveBeenCalledWith({ 'loanReservations.agreementId': 'agreement' }, {
+      $set: { 'loanReservations.$.status': 'RESERVED', 'loanReservations.$.rego': 'ABC123' },
+      $unset: { 'loanReservations.$.agreementId': '' },
+    });
   });
   it('uses the existing sites collection without creating a slot collection', async () => {
     const { model, service } = setup();

@@ -342,9 +342,11 @@ export class LoanAgreementsService implements OnModuleInit {
       templateVersion: 'v1.0-2026',
     });
 
+    let reservedRego: string | undefined;
     if (dto.reservationId) {
       const booking = await this.reservations.claim(dto.reservationId, dto.siteId, id, dto.vehicle.rego,
         dto.loanStartDateTime || '', dto.dueBackDateTime);
+      reservedRego = booking.rego;
       newAgreement.reservationId = dto.reservationId;
       newAgreement.loanerName = `GWM LOAN ${booking.loanerNumber}`;
     }
@@ -352,7 +354,7 @@ export class LoanAgreementsService implements OnModuleInit {
       const saved = await newAgreement.save();
       return saved.toObject();
     } catch (error) {
-      if (dto.reservationId) await this.reservations.releaseClaim(id);
+      if (dto.reservationId) await this.reservations.releaseClaim(id, reservedRego);
       throw error;
     }
   }

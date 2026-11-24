@@ -10,6 +10,6 @@ export class LoanReservation {
   @Prop({ required: true }) endAt: string;
   @Prop({ required: true, enum: ['RESERVED', 'ISSUED', 'CANCELLED', 'RETURNED'] }) status: string;
   @Prop() agreementId?: string;
-  @Prop() rego?: string;
+  @Prop({ trim: true, uppercase: true, maxlength: 20 }) rego?: string;
 }
 export const LoanReservationSchema = SchemaFactory.createForClass(LoanReservation);
