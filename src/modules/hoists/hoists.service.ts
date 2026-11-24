@@ -49,6 +49,10 @@ export class HoistsService implements OnModuleInit {
     await this.seedDefaultHoists();
   }
 
+  static readonly southlandSiteIds = [
+    'site_chery_southland', 'site_southland_isuzu_ute', 'site_southland_kia', 'site_southland_lepas',
+  ];
+
   async seedDefaultHoists() {
     const hoistsToSeed: any[] = [];
 
@@ -114,6 +118,24 @@ export class HoistsService implements OnModuleInit {
       });
     }
 
+    const southlandAreas = [
+      { code: 'mw', name: 'Main Workshop', count: 22 },
+      { code: 'hy', name: 'Holding Yard', count: 3 },
+      { code: 'ur', name: 'Used Car Reco', count: 5 },
+    ];
+    let southlandNumber = 0;
+    for (const area of southlandAreas) {
+      for (let bay = 1; bay <= area.count; bay++) {
+        const id = 'hoist_sl_' + area.code + '_' + String(bay).padStart(2, '0');
+        await this.hoistModel.updateOne({ id }, { $setOnInsert: {
+          id, hoistNumber: ++southlandNumber, name: area.name + ' Hoist ' + bay,
+          facility: 'southland', facilityName: area.name, siteId: HoistsService.southlandSiteIds[0],
+          brand: 'Unrecorded', type: 'Unrecorded', capacityKg: null,
+          status: 'OPERATIONAL', isActive: true, lockoutTagoutActive: false,
+        } }, { upsert: true });
+      }
+    }
+
     for (const h of hoistsToSeed) {
       const { name, ...initialFields } = h;
       await this.hoistModel.updateOne(
@@ -140,9 +162,13 @@ export class HoistsService implements OnModuleInit {
       filter.facility = facility;
     }
     if (siteId) {
-      filter.siteId = siteId;
+      if (HoistsService.southlandSiteIds.includes(siteId)) {
+        filter.$and = [{ $or: [{ siteId }, { facility: 'southland' }] }];
+      } else {
+        filter.siteId = siteId;
+      }
     }
-    return this.hoistModel.find(filter).sort({ facility: 1, facilityName: 1, hoistNumber: 1 }).lean();
+    return this.hoistModel.find(filter).sort({ facility: 1, hoistNumber: 1, facilityName: 1 }).lean();
   }
 
   async findOne(id: string): Promise<Hoist> {

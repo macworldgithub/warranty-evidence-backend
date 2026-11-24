@@ -44,8 +44,9 @@ export class HoistsController {
   private async assignmentUser(id: string, authorization?: string) {
     const user = await this.authService.resolveUserFromAuthorization(authorization);
     const hoist = await this.hoistsService.findOne(id);
-    const sites = user.authorizedSiteIds?.length ? user.authorizedSiteIds : [user.defaultSiteId];
-    if (user.role !== 'ADMIN' && !sites.includes(hoist.siteId)) {
+    const sites = [user.defaultSiteId, ...(user.authorizedSiteIds || [])];
+    const sharedSouthland = hoist.facility === 'southland' && sites.some(site => HoistsService.southlandSiteIds.includes(site));
+    if (user.role !== 'ADMIN' && !sites.includes(hoist.siteId) && !sharedSouthland) {
       throw new ForbiddenException('This hoist is outside your assigned sites.');
     }
     return user;

@@ -19,7 +19,13 @@ describe('numbered workshop hoists', () => {
       expect(hoists.map(call => call[1].$setOnInsert.hoistNumber)).toEqual(Array.from({ length: 11 }, (_, i) => i + 1));
       expect(hoists.map(call => call[1].$set.name)).toEqual(Array.from({ length: 11 }, (_, i) => `Hoist ${i + 1}`));
     }
-    expect(seeds).toHaveLength(22);
+    const southland = seeds.map(call => call[1].$setOnInsert).filter(hoist => hoist.facility === 'southland');
+    expect(southland).toHaveLength(30);
+    expect(southland.filter(hoist => hoist.facilityName === 'Main Workshop')).toHaveLength(22);
+    expect(southland.filter(hoist => hoist.facilityName === 'Holding Yard')).toHaveLength(3);
+    expect(southland.filter(hoist => hoist.facilityName === 'Used Car Reco')).toHaveLength(5);
+    expect(new Set(southland.map(hoist => hoist.id)).size).toBe(30);
+    expect(seeds).toHaveLength(52);
   });
   it('renames existing records without resetting safety status or deleting audit history', async () => {
     const { model, service } = setup();
@@ -32,7 +38,7 @@ describe('numbered workshop hoists', () => {
   it('resynchronizes an already populated inventory', async () => {
     const { model, service } = setup();
     await service.seedDefaultHoists(); await service.seedDefaultHoists();
-    expect(model.updateOne).toHaveBeenCalledTimes(46);
+    expect(model.updateOne).toHaveBeenCalledTimes(106);
   });
   it('requires a vehicle or job reference', async () => {
     const { model, service } = setup();
