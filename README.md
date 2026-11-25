@@ -66,6 +66,8 @@ Warranty exposes authenticated `POST /api/v1/vehicle/decode-rego` with `{ "rego"
 
 Deploy the backend with the PWA Rego changes. Select the corresponding auth and report hosts together when changing environments. The Sales Floor source and deployment are unchanged.
 
+After deploying, rebuilding and restarting the backend process, run `node tools/check-rego-route.cjs https://warranty-evidence.omnisuiteai.com`. A registered route returns HTTP 401 without a user session; `Cannot POST /api/v1/vehicle/decode-rego` means the running API does not contain this change. Updating the PWA or refreshing its cache does not register a backend route. The probe sends no user token and does not invoke InfoAgent on the updated backend.
+
 Verification: development API Rego and VIN lookups succeeded with the configured client; both shared one token. The normalized live Rego response matched Sales Floor's normalizer field for field. Automated tests cover the request/auth contract, token reuse and renewal, no-result behavior, provider failures, normalization, risk warnings and Warranty's adapters/fallback.
 
 ## Run tests
