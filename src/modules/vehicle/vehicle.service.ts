@@ -184,7 +184,7 @@ export class VehicleService {
             timeout(10000),
             catchError((err) => {
               this.logger.warn(
-                `mcp.vin request failed for VIN ${vin}: ${err.message} — returning unknown stub`,
+                `mcp.vin request failed for VIN ${vin}: ${err.message}`,
               );
               return of(null);
             }),
@@ -226,7 +226,12 @@ export class VehicleService {
     }
 
     // ── Step 3: Completely unknown — return minimal stub ─────────────────────
-    this.logger.warn(`No data for VIN ${vin} (WMI: ${vin.substring(0, 3)}) — returning unknown stub`);
+    const wmiMatch = this.findWmiMatch(vin);
+    if (wmiMatch) {
+      return this.buildHeuristicResponse(vin, wmiMatch, isValidCheckDigit);
+    }
+
+    this.logger.warn(`No data for VIN ${vin} (WMI: ${vin.substring(0, 3)}) - returning unknown stub`);
     return {
       vin,
       make: 'Unknown',
