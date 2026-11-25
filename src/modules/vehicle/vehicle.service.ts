@@ -4,6 +4,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, Length } from 'class-validator';
 import { firstValueFrom, timeout, catchError, of } from 'rxjs';
 import { PowertrainType } from '../../common/enums';
+import { InfoAgentService, InfoAgentVehicle } from './infoagent.service';
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
@@ -27,11 +28,44 @@ export class DecodedVehicleResponseDto {
   @ApiProperty({ example: 'ATTO 3' })
   model: string;
 
-  @ApiProperty({ example: 2024 })
-  year: number;
+  @ApiProperty({ example: 2024, nullable: true })
+  year: number | null;
 
-  @ApiProperty({ enum: PowertrainType, example: PowertrainType.EV })
-  powertrain: PowertrainType;
+  @ApiPropertyOptional({ enum: PowertrainType, example: PowertrainType.EV })
+  powertrain?: PowertrainType;
+
+  @ApiPropertyOptional()
+  rego?: string;
+
+  @ApiPropertyOptional()
+  state?: string;
+
+  @ApiPropertyOptional()
+  colour?: string;
+
+  @ApiPropertyOptional()
+  bodyType?: string;
+
+  @ApiPropertyOptional()
+  vehicleType?: string;
+
+  @ApiPropertyOptional()
+  engineNumber?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  compliancePlate?: string | null;
+
+  @ApiPropertyOptional({ type: Object })
+  registration?: InfoAgentVehicle['registration'];
+
+  @ApiPropertyOptional({ type: Object })
+  riskFlags?: InfoAgentVehicle['riskFlags'];
+
+  @ApiPropertyOptional({ type: [String] })
+  warnings?: string[];
+
+  @ApiPropertyOptional()
+  source?: string;
 
   @ApiPropertyOptional({ example: 'Sport Utility Vehicle (SUV)' })
   bodyClass?: string;
@@ -57,7 +91,7 @@ export class DecodedVehicleResponseDto {
   @ApiProperty({
     example: false,
     description:
-      'True when result came from WMI heuristics rather than a live API decode. Mobile app should prompt technician to confirm before proceeding.',
+      'True when identity details are incomplete or estimated. The client should prompt the technician to verify the vehicle.',
   })
   requiresManualConfirm: boolean;
 }
@@ -169,11 +203,25 @@ export class VehicleService {
   private readonly logger = new Logger(VehicleService.name);
   private readonly MCP_VIN_BASE = 'https://mcp.vin/api/vin';
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(private readonly httpService: HttpService, private readonly infoagent: InfoAgentService) {}
 
   async decodeVin(dto: DecodeVinDto): Promise<DecodedVehicleResponseDto> {
     const vin = dto.vin.trim().toUpperCase();
     const isValidCheckDigit = this.validateCheckDigit(vin);
+
+    if (this.infoagent.isConfigured()) {
+      try {
+        const vehicle = await this.infoagent.lookupByVin({ vin });
+        if (vehicle?.vin === vin && vehicle.make) {
+          return {
+            ...vehicle, vin, provider: vehicle.source, isValidCheckDigit,
+            requiresManualConfirm: !vehicle.model || !vehicle.year,
+          };
+        }
+      } catch {
+        this.logger.warn('InfoAgent VIN lookup unavailable; using the existing VIN decoder.');
+      }
+    }
 
     // Try live decoding before using a manufacturer-only fallback.
     try {

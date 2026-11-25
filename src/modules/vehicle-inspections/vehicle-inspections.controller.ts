@@ -7,6 +7,7 @@ import { memoryStorage } from 'multer';
 import { createHash } from 'node:crypto';
 import { StorageService } from '../../common/storage/storage.service';
 import { missingVehiclePhotos, VEHICLE_PHOTO_CATEGORIES } from '../warranty-cases/vehicle-photos';
+import { REGISTRATION_STATES } from '../vehicle/rego.dto';
 
 interface InspectionInput { id: string; vin: string; siteId: string; inspection: any }
 @Controller('vehicle-inspections')
@@ -30,7 +31,7 @@ export class VehicleInspectionsController implements OnModuleInit {
     const projection = vin ? { _id: 0 as const } : {
       _id: 0 as const, id: 1 as const, createdAt: 1 as const, inspectorName: 1 as const,
       'inspection.status': 1 as const, 'inspection.vin': 1 as const, 'inspection.siteId': 1 as const,
-      'inspection.roNumber': 1 as const, 'inspection.rego': 1 as const,
+      'inspection.roNumber': 1 as const, 'inspection.rego': 1 as const, 'inspection.regoState': 1 as const,
       'inspection.vehicleDetails': 1 as const, 'inspection.odometer': 1 as const,
       'inspection.updatedAt': 1 as const,
     };
@@ -112,6 +113,9 @@ export class VehicleInspectionsController implements OnModuleInit {
     if (previous && (previous.siteId !== dto.siteId || previous.vin !== dto.vin || previous.createdBy !== user.id)) throw new ForbiddenException('This inspection belongs to another capture session.');
     if (previous?.inspection?.status === 'COMPLETE') return previous;
     const input = dto.inspection;
+    if (input.regoState !== undefined && !REGISTRATION_STATES.includes(input.regoState)) {
+      throw new BadRequestException('Select a valid registration state.');
+    }
     if (input.captureMode === 'quick' && user.role === 'CLERK') throw new ForbiddenException('Inspection capture is unavailable for this role.');
     const evidenceItems = (Array.isArray(input.evidenceItems) ? input.evidenceItems : []).map((item: any) => ({
       id: typeof item.id === 'string' ? item.id : undefined,
@@ -128,7 +132,7 @@ export class VehicleInspectionsController implements OnModuleInit {
     const now = new Date().toISOString();
     const record = { vin: dto.vin, siteId: dto.siteId, updatedAt: now, inspection: {
       vin: dto.vin, siteId: dto.siteId, vehicleDetails: input.vehicleDetails, roNumber: input.roNumber,
-      rego: input.rego, odometer: input.odometer,
+      rego: input.rego, regoState: input.regoState, odometer: input.odometer,
       brandId: input.brandId, brandPackId: input.brandPackId, brandPackVersion: input.brandPackVersion,
       capturedZoneKeys: input.capturedZoneKeys, defects: input.defects, voiceNotes: input.voiceNotes,
       status: input.status, evidenceItems, updatedAt: now,

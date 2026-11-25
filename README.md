@@ -46,6 +46,28 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## InfoAgent NEVDIS vehicle lookup
+
+The Warranty client follows `booran-sales-floor-backend/lib/infoagent.js`. Configure these values on the backend (see `.env.example`):
+
+```dotenv
+INFOAGENT_CLIENT_ID=your-client-id
+INFOAGENT_CLIENT_SECRET=your-client-secret
+INFOAGENT_BASE_URL=https://api.dev.infoagent.com.au
+INFOAGENT_AUTH_URL=https://api.dev.infoagent.com.au/auth/v1/token/oauth
+INFOAGENT_TIMEOUT_MS=10000
+```
+
+OAuth uses Basic authentication with the client ID/secret and form body `grant_type=client_credentials`. The shared client accepts `access_token` or `token`, defaults a missing `expires_in` to 3600 seconds, and renews cached tokens 60 seconds before expiry. Concurrent authentication requests share one token request; an upstream 401 triggers one token renewal and retry. Tokens and credentials are never returned to the PWA or logged in provider errors.
+
+Both lookups use `POST /nevdis/v1/vehicle-report`, a bearer token, and products `VEHICLE_AGE`, `EXTENDED_DATA`, `HIGH_PERFORMANCE_INFO`, `REGISTRATION`, `STOLEN_INFO`, `WRITTEN_OFF_INFO`. Rego sends `{ plate, state, products }`; VIN sends `{ vin, products }`. Only `result.responseCode === "SUCCESS"` is normalized, using `result.vehicles[0]`. Identification, extended data, manufacture year/compliance plate, registration, incidents, risk flags and warning messages follow the Sales Floor contract. Unknown values retain the reference empty/null defaults.
+
+Warranty exposes authenticated `POST /api/v1/vehicle/decode-rego` with `{ "rego": "ABC123", "state": "VIC" }` and `POST /api/v1/vehicle/decode-vin` with `{ "vin": "1HGCM82633A004352" }`. Responses retain Warranty's direct JSON shape, adding its `provider`, `requiresManualConfirm` and VIN check-digit metadata to normalized InfoAgent fields. Missing powertrain information is omitted. VIN falls back to the existing decoder if InfoAgent is unconfigured, unavailable, or returns no matching vehicle. Rego returns 404 for no result and maps provider failures to sanitized 400/502/503 responses; the PWA supports manual capture and retry.
+
+Deploy the backend with the PWA Rego changes. Select the corresponding auth and report hosts together when changing environments. The Sales Floor source and deployment are unchanged.
+
+Verification: development API Rego and VIN lookups succeeded with the configured client; both shared one token. The normalized live Rego response matched Sales Floor's normalizer field for field. Automated tests cover the request/auth contract, token reuse and renewal, no-result behavior, provider failures, normalization, risk warnings and Warranty's adapters/fallback.
+
 ## Run tests
 
 ```bash
