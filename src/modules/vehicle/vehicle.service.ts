@@ -226,6 +226,35 @@ export class VehicleService {
     }
 
     // ── Step 3: Completely unknown — return minimal stub ─────────────────────
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService
+          .get<{ Results?: NonNullable<McpVinResponse['raw_nhtsa']>[] }>(
+            `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${vin}?format=json`,
+          )
+          .pipe(timeout(5000)),
+      );
+      const result = data.Results?.[0];
+      const year = Number(result?.ModelYear);
+      if (result?.Make && result.Model && year > 1900) {
+        return {
+          vin,
+          make: this.titleCase(result.Make),
+          model: result.Model,
+          year,
+          powertrain: this.mapFuelTypeToPowertrain(result.FuelTypePrimary || null),
+          bodyClass: result.BodyClass || undefined,
+          fuelType: result.FuelTypePrimary || undefined,
+          driveType: result.DriveType || undefined,
+          provider: 'NHTSA vPIC',
+          isValidCheckDigit,
+          requiresManualConfirm: result.ErrorCode !== '0',
+        };
+      }
+    } catch (err) {
+      this.logger.warn(`NHTSA vPIC request failed for VIN ${vin}: ${err.message}`);
+    }
+
     const wmiMatch = this.findWmiMatch(vin);
     if (wmiMatch) {
       return this.buildHeuristicResponse(vin, wmiMatch, isValidCheckDigit);
