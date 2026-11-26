@@ -230,7 +230,7 @@ export class LoanAgreementsService implements OnModuleInit {
         availableCount++;
         continue;
       }
-      if (agr.status === 'CANCELLED') {
+      if (agr.status === 'CANCELLED' || agr.status === 'DRAFT') {
         continue;
       }
 
@@ -268,7 +268,7 @@ export class LoanAgreementsService implements OnModuleInit {
     const in60Min = now + 3600000;
 
     const enriched = agreements.map((agr) => {
-      if (agr.status === 'RETURNED' || agr.status === 'CANCELLED') {
+      if (agr.status === 'RETURNED' || agr.status === 'CANCELLED' || agr.status === 'DRAFT') {
         return agr;
       }
       const dueTime = agr.dueBackDateTime ? new Date(agr.dueBackDateTime).getTime() : 0;
@@ -333,6 +333,8 @@ export class LoanAgreementsService implements OnModuleInit {
       dailyKmCap: dto.dailyKmCap || 50,
       excessKmRate: dto.excessKmRate || 0.50,
       basicInsuranceExcess: dto.basicInsuranceExcess || 2500,
+      securityDepositHeld: dto.securityDepositHeld ?? 500,
+      depositPaymentMethod: dto.depositPaymentMethod || 'CARD_PREAUTH',
       outbound: {
         ...dto.outbound,
         issuedAt: new Date().toISOString(),

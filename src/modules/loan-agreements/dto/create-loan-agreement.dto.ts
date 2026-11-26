@@ -113,6 +113,11 @@ export class InspectionPhotosDto {
   @IsOptional()
   @IsString()
   passengerSide?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  odometerDash?: string;
 }
 
 export class OutboundConditionDto {

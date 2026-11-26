@@ -40,7 +40,7 @@ export class LoanAgreementsController {
     const assigned = (user.authorizedSiteIds || []).filter(Boolean);
     if (assigned.length > 0) return assigned;
     if (user.defaultSiteId) return [user.defaultSiteId];
-    return ['site_cranbourne_byd'];
+    return [];
   }
 
   private assertSiteAccess(user: UserProfileDto, siteId: string): void {
