@@ -1,0 +1,21 @@
+Rule Name,Rule Key,Media Type,Tier,Mandatory,Naming Convention,Viewfinder Guidance,Trigger
+VIN at time of presentation,vin_presentation,image,1,TRUE,[DealerRONumber]_VIN.jpg,Clear photo or record of VIN plate or digital readout at presentation,None
+Odometer reading at time of presentation,odometer_presentation,image,1,TRUE,[DealerRONumber]_Odometer.jpg,Clear photo of odometer reading at time of presentation,None
+Clear description of the customer complaint,customer_complaint,document,1,TRUE,[DealerRONumber]_Complaint.txt,Written clear description of the customer complaint,None
+Clear description of the fault,fault_description,document,1,TRUE,[DealerRONumber]_Fault.txt,Written clear description of the fault,None
+Clear description of the cause,cause_description,document,1,TRUE,[DealerRONumber]_Cause.txt,Written clear description of the cause,None
+Clear description of the correction,correction_description,document,1,TRUE,[DealerRONumber]_Correction.txt,Written clear description of the correction performed,None
+Technician diagnostic findings,diagnostic_findings,document,1,TRUE,[DealerRONumber]_Diagnostics.pdf,Technician diagnostic findings report or notes,None
+Technician reports,technician_reports,document,1,TRUE,[DealerRONumber]_TechReport.pdf,Full technician reports,None
+Technician test results,test_results,document,1,TRUE,[DealerRONumber]_TestResults.pdf,Technician test results,None
+Technician measurements,measurements,document,1,TRUE,[DealerRONumber]_Measurements.pdf,Technician measurements and readings,None
+Clear images of the failure,failure_images,image,1,TRUE,[DealerRONumber]_Failure.jpg,Clear images of the failure,None
+Clear images of the failure location,failure_location_images,image,1,TRUE,[DealerRONumber]_FailureLocation.jpg,Clear images showing the location of the failure,None
+Clear images of the failure extent,failure_extent_images,image,1,TRUE,[DealerRONumber]_FailureExtent.jpg,Clear images showing the extent of the failure,None
+Clear images of the affected component,affected_component_images,image,1,TRUE,[DealerRONumber]_AffectedComponent.jpg,Clear images of the affected component,None
+Images of the failed part,failed_part_images,image,1,TRUE,[DealerRONumber]_FailedPart.jpg,Images of the failed part,None
+Images of the displaced part,displaced_part_images,image,1,TRUE,[DealerRONumber]_DisplacedPart.jpg,Images of the displaced part,None
+Part barcode (where applicable),part_barcode,image,1,TRUE,[DealerRONumber]_PartBarcode.jpg,Clear image of the part barcode where applicable,None
+Video where fault or operation cannot be demonstrated through photographs,fault_video,video,1,TRUE,[DealerRONumber]_FaultVideo.mp4,Video demonstrating the fault or operation that cannot be shown in photos,None
+Technician time/clocking records,tech_time_records,document,1,TRUE,[DealerRONumber]_TimeRecords.pdf,Technician time and clocking records,None
+Anything else the Warranty Policy and Procedure v2.0 requires,warranty_policy_other,document,1,TRUE,[DealerRONumber]_AdditionalEvidence.pdf,Any additional evidence required by Warranty Policy and Procedure v2.0,None

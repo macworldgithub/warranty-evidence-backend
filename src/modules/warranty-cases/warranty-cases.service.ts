@@ -1,4 +1,4 @@
-import { missingVehiclePhotos } from './vehicle-photos';
+import { VEHICLE_PHOTO_CATEGORIES, evidenceRuleKeysMatch } from './vehicle-photos';
 
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -229,6 +229,29 @@ export class WarrantyCasesService implements OnModuleInit {
     @Inject(forwardRef(() => VoiceToTechService))
     private voiceToTechService: VoiceToTechService,
   ) { }
+
+  private async submissionChecklist(warrantyCase: { brandId?: string; evidenceItems?: any[]; faultCategory?: string; partReplaced?: boolean; noiseFault?: boolean; diagnosticsAvailable?: boolean; repairStage?: string }) {
+    const required: { ruleKey: string; name: string; mediaType: string }[] = VEHICLE_PHOTO_CATEGORIES
+      .filter(photo => photo.isMandatory).map(photo => ({ ...photo, mediaType: 'image' }));
+    if (warrantyCase.brandId === 'brand_chery') {
+      const evaluated = await this.brandPacksService.evaluateRules({
+        brandId: warrantyCase.brandId,
+        faultCategory: (warrantyCase.faultCategory || FaultCategory.GENERAL_OTHER) as FaultCategory,
+        partReplaced: warrantyCase.partReplaced ?? false, noiseFault: warrantyCase.noiseFault ?? false,
+        diagnosticsAvailable: warrantyCase.diagnosticsAvailable ?? false,
+        repairStage: (warrantyCase.repairStage || RepairStage.DURING_REPAIR) as RepairStage,
+      });
+      for (const rule of evaluated.resolvedRules.filter(rule => rule.isMandatory)) {
+        const index = required.findIndex(item => evidenceRuleKeysMatch(item.ruleKey, rule.ruleKey));
+        if (index >= 0) required[index] = rule;
+        else required.push(rule);
+      }
+    }
+    const missingRules = required.filter(rule => !(warrantyCase.evidenceItems || []).some(item =>
+      evidenceRuleKeysMatch(item.ruleKey, rule.ruleKey) && item.mediaType === rule.mediaType &&
+      item.qualityStatus !== 'FAILED' && /^(https?:\/\/|\/uploads\/)/i.test(item.storageUrl || item.serverUrl || '')));
+    return { totalMandatory: required.length, completedMandatory: required.length - missingRules.length, missingRules };
+  }
 
   private async getAdminEmails(): Promise<string[]> {
     try {
@@ -1048,6 +1071,7 @@ export class WarrantyCasesService implements OnModuleInit {
       repairStage: dto.repairStage,
     });
 
+    const checklist = await this.submissionChecklist(dto);
     const newCase = new this.caseModel({
       id: `CASE-${dto.roNumber.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`,
       idempotencyKey: scopedIdempotencyKey,
@@ -1101,8 +1125,8 @@ export class WarrantyCasesService implements OnModuleInit {
         : [],
       flagHistory: [],
       checklistSummary: {
-        totalMandatory: 7,
-        completedMandatory: 7 - missingVehiclePhotos(dto.evidenceItems || [], true).length,
+        totalMandatory: checklist.totalMandatory,
+        completedMandatory: checklist.completedMandatory,
         totalOptional: evaluated.optionalCount,
         completedOptional: 0,
         isReadyForSubmission: false,
@@ -1135,10 +1159,10 @@ export class WarrantyCasesService implements OnModuleInit {
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
     // Validate MIME type
-    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/pdf'];
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/pdf', 'text/plain'];
     if (!allowedMimes.includes(file.mimetype)) {
       throw new BadRequestException(
-        `File type "${file.mimetype}" is not allowed. Accepted: JPEG, PNG, WebP, MP4, WebM, PDF`,
+        `File type "${file.mimetype}" is not allowed. Accepted: JPEG, PNG, WebP, MP4, WebM, PDF, TXT`,
       );
     }
 
@@ -1150,6 +1174,7 @@ export class WarrantyCasesService implements OnModuleInit {
       'video/mp4': 'mp4',
       'video/webm': 'webm',
       'application/pdf': 'pdf',
+      'text/plain': 'txt',
     };
     const ext = extMap[file.mimetype] ?? 'bin';
     const descriptor = ruleKey
@@ -1162,13 +1187,20 @@ export class WarrantyCasesService implements OnModuleInit {
     }
     const photoId = allowsMultiplePhotos ? this.defectPhotoId(evidenceId) : undefined;
     const suffix = photoId ? `_${photoId}` : '';
-    const oemFileName = `${warrantyCase.roNumber}${descriptor}${suffix}.${ext}`;
+    let oemFileName = `${warrantyCase.roNumber}${descriptor}${suffix}.${ext}`;
+    if (warrantyCase.brandId === 'brand_chery') {
+      const pack = await this.brandPacksService.findActiveByBrand(warrantyCase.brandId);
+      const rule = pack.rules.find(item => evidenceRuleKeysMatch(item.ruleKey, ruleKey));
+      if (rule) oemFileName = rule.namingConvention
+        .replace(/\[DealerRONumber\]/g, warrantyCase.roNumber.replace(/[^a-zA-Z0-9]/g, ''))
+        .replace(/\.[^.]+$/, `.${ext}`);
+    }
 
     // Determine mediaType enum
     const mediaTypeMap: Record<string, string> = {
       'image/jpeg': 'image', 'image/png': 'image', 'image/webp': 'image',
       'video/mp4': 'video', 'video/webm': 'video',
-      'application/pdf': 'document',
+      'application/pdf': 'document', 'text/plain': 'document',
     };
     const mediaType = mediaTypeMap[file.mimetype] ?? 'document';
 
@@ -1217,14 +1249,15 @@ export class WarrantyCasesService implements OnModuleInit {
     });
 
     const hasUnresolvedFlags = warrantyCase.flagHistory.some((f) => !f.resolvedAt);
-    const photosReady = missingVehiclePhotos(warrantyCase.evidenceItems, true).length === 0;
+    const checklist = await this.submissionChecklist(warrantyCase);
+    const photosReady = checklist.missingRules.length === 0;
     if (!hasUnresolvedFlags && photosReady && warrantyCase.status === 'Flagged') {
       warrantyCase.status = 'Awaiting Review';
       warrantyCase.checklistSummary.isReadyForSubmission = true;
     }
 
-    warrantyCase.checklistSummary.totalMandatory = 7;
-    warrantyCase.checklistSummary.completedMandatory = 7 - missingVehiclePhotos(warrantyCase.evidenceItems, true).length;
+    warrantyCase.checklistSummary.totalMandatory = checklist.totalMandatory;
+    warrantyCase.checklistSummary.completedMandatory = checklist.completedMandatory;
     warrantyCase.checklistSummary.isReadyForSubmission = photosReady && !hasUnresolvedFlags;
     warrantyCase.markModified('evidenceItems');
     warrantyCase.markModified('flagHistory');
@@ -1327,7 +1360,8 @@ export class WarrantyCasesService implements OnModuleInit {
     });
 
     const hasUnresolvedFlags = warrantyCase.flagHistory.some((f) => !f.resolvedAt);
-    const photosReady = missingVehiclePhotos(warrantyCase.evidenceItems, true).length === 0;
+    const checklist = await this.submissionChecklist(warrantyCase);
+    const photosReady = checklist.missingRules.length === 0;
     if (!hasUnresolvedFlags && photosReady && warrantyCase.status === 'Flagged') {
       warrantyCase.status = 'Awaiting Review';
       warrantyCase.checklistSummary.isReadyForSubmission = true;
@@ -1335,8 +1369,8 @@ export class WarrantyCasesService implements OnModuleInit {
       warrantyCase.checklistSummary.isReadyForSubmission = false;
     }
 
-    warrantyCase.checklistSummary.totalMandatory = 7;
-    warrantyCase.checklistSummary.completedMandatory = 7 - missingVehiclePhotos(warrantyCase.evidenceItems, true).length;
+    warrantyCase.checklistSummary.totalMandatory = checklist.totalMandatory;
+    warrantyCase.checklistSummary.completedMandatory = checklist.completedMandatory;
     warrantyCase.checklistSummary.isReadyForSubmission = photosReady && !hasUnresolvedFlags;
 
     warrantyCase.markModified('flagHistory');
@@ -1476,9 +1510,10 @@ export class WarrantyCasesService implements OnModuleInit {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
-    const missingPhotos = missingVehiclePhotos(warrantyCase.evidenceItems, true);
+    const checklist = await this.submissionChecklist(warrantyCase);
+    const missingPhotos = checklist.missingRules;
     if (missingPhotos.length) throw new BadRequestException(
-      'Upload required vehicle photos before completing: ' + missingPhotos.map(photo => photo.name).join(', '),
+      'Upload required evidence before completing: ' + missingPhotos.map(photo => photo.name).join(', '),
     );
 
     const unresolvedFlags = warrantyCase.flagHistory?.filter((f) => !f.resolvedAt) || [];
@@ -1492,8 +1527,8 @@ export class WarrantyCasesService implements OnModuleInit {
     }
 
     warrantyCase.status = 'Awaiting Review';
-    warrantyCase.checklistSummary.totalMandatory = 7;
-    warrantyCase.checklistSummary.completedMandatory = 7;
+    warrantyCase.checklistSummary.totalMandatory = checklist.totalMandatory;
+    warrantyCase.checklistSummary.completedMandatory = checklist.completedMandatory;
     warrantyCase.checklistSummary.isReadyForSubmission = true;
     warrantyCase.markModified('checklistSummary');
     const savedCase = (await warrantyCase.save()).toObject();
@@ -1583,9 +1618,10 @@ export class WarrantyCasesService implements OnModuleInit {
     const warrantyCase = await this.caseModel.findOne({ id: caseId });
     if (!warrantyCase) throw new NotFoundException(`Warranty case ${caseId} not found`);
 
-    const missingPhotos = missingVehiclePhotos(warrantyCase.evidenceItems, true);
+    const checklist = await this.submissionChecklist(warrantyCase);
+    const missingPhotos = checklist.missingRules;
     if (missingPhotos.length) throw new BadRequestException(
-      'Upload required vehicle photos before completing: ' + missingPhotos.map(photo => photo.name).join(', '),
+      'Upload required evidence before completing: ' + missingPhotos.map(photo => photo.name).join(', '),
     );
 
     const unresolvedFlags = warrantyCase.flagHistory?.filter((f) => !f.resolvedAt) || [];

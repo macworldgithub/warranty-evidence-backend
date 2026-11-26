@@ -7,6 +7,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsBoolean, IsEnum, IsOptional, IsArray, IsNumber } from 'class-validator';
 import { FaultCategory, RepairStage } from '../../common/enums';
 import { BrandPack, BrandPackDocument } from '../../schemas/brand-pack.schema';
+import { CHERY_EVIDENCE_RULES } from './chery-evidence-rules';
 
 export class CreateBrandPackDto {
   @IsString()
@@ -20,7 +21,7 @@ export class CreateBrandPackDto {
   description?: string;
 
   @IsOptional()
-  @IsEnum(['blank', 'common'])
+  @IsEnum(['blank', 'common', 'chery'])
   template?: string;
 }
 
@@ -360,6 +361,32 @@ export class BrandPacksService implements OnModuleInit {
       }
       console.log(`🍃 Successfully synchronized ${defaultPacks.length} Brand Packs in MongoDB`);
     }
+    await this.ensureCheryPack();
+  }
+
+  /** Install on populated databases too, without replacing an administrator's pack. */
+  private async ensureCheryPack() {
+    const published = await this.packModel.findOne({ brandId: 'brand_chery', status: 'PUBLISHED' }).lean();
+    if (published) return;
+    const installed = await this.packModel.findOne({ id: 'brandpack_chery_v1' }).lean();
+    if (installed) return; // Respect an explicitly archived template.
+    const latest = await this.packModel.findOne({ brandId: 'brand_chery' }).sort({ version: -1 }).lean();
+    await this.packModel.updateOne(
+      { id: 'brandpack_chery_v1' },
+      { $setOnInsert: {
+        id: 'brandpack_chery_v1', brandId: 'brand_chery', brandName: 'Chery',
+        version: (latest?.version ?? 0) + 1, status: 'PUBLISHED',
+        name: 'Chery Warranty Evidence Requirements',
+        description: '20 evidence requirements from the supplied Chery evidence rules template.',
+        publishedAt: new Date().toISOString(), publishedBy: 'Chery evidence template setup',
+        rules: CHERY_EVIDENCE_RULES,
+      } },
+      { upsert: true },
+    );
+    await this.brandModel.updateOne(
+      { id: 'brand_chery', $or: [{ activeBrandPackId: 'brandpack_common_v1' }, { activeBrandPackId: { $exists: false } }] },
+      { $set: { activeBrandPackId: 'brandpack_chery_v1', seedChecklistReference: 'Chery evidence rules template (20 requirements)' } },
+    );
   }
 
   async findAll(): Promise<BrandPack[]> {
@@ -454,6 +481,10 @@ export class BrandPacksService implements OnModuleInit {
     if (!brand) throw new BadRequestException('Select an active OEM brand');
     const existing = await this.packModel.findOne({ brandId: brand.id }).sort({ version: -1 }).lean();
     let rules: BrandPack['rules'] = [];
+    if (dto.template === 'chery') {
+      if (brand.id !== 'brand_chery') throw new BadRequestException('The Chery template is only available for Chery');
+      rules = CHERY_EVIDENCE_RULES.map(rule => ({ ...rule }));
+    }
     if (dto.template === 'common') {
       const common = await this.packModel.findOne({ id: 'brandpack_common_v1' }).lean();
       if (!common) throw new BadRequestException('Common template is unavailable. Choose a blank checklist.');

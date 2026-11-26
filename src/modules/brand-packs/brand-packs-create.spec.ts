@@ -8,6 +8,7 @@ jest.mock('../auth/auth.service', () => ({ AuthService: class {} }));
 
 import { BrandPacksService } from './brand-packs.service';
 import { BrandPacksController } from './brand-packs.controller';
+import { CHERY_EVIDENCE_RULES } from './chery-evidence-rules';
 
 describe('Create brand packs', () => {
   function setup(common: unknown = { rules: [{ id: 'common-rule' }] }) {
@@ -34,6 +35,19 @@ describe('Create brand packs', () => {
   it('copies the common template only when requested', async () => {
     const { service } = setup();
     expect((await service.create({ brandId: 'brand_chery', name: 'Checklist', template: 'common' })).rules).toEqual([{ id: 'common-rule' }]);
+  });
+
+  it('creates a Chery draft containing the supplied 20 rules', async () => {
+    const { service } = setup();
+    const pack = await service.create({ brandId: 'brand_chery', name: 'Chery requirements', template: 'chery' });
+    expect(pack.rules).toEqual(CHERY_EVIDENCE_RULES);
+    expect(pack.status).toBe('DRAFT');
+  });
+
+  it('rejects the Chery template for another manufacturer', async () => {
+    const { service, brandModel } = setup();
+    brandModel.findOne.mockReturnValue({ lean: async () => ({ id: 'brand_byd', name: 'BYD' }) });
+    await expect(service.create({ brandId: 'brand_byd', name: 'BYD', template: 'chery' })).rejects.toThrow('only available for Chery');
   });
 
   it('rejects whitespace names and unknown brands', async () => {

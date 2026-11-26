@@ -122,8 +122,8 @@ export class BrandsService implements OnModuleInit {
         code: 'CHERY',
         name: 'Chery',
         description: 'Chery Motor Australia',
-        seedChecklistReference: 'Tier 1 Common Pack',
-        activeBrandPackId: 'brandpack_common_v1',
+        seedChecklistReference: 'Chery evidence rules template (20 requirements)',
+        activeBrandPackId: 'brandpack_chery_v1',
         isActive: true,
       },
       {

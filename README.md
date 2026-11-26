@@ -70,6 +70,14 @@ After deploying, rebuilding and restarting the backend process, run `node tools/
 
 Verification: development API Rego and VIN lookups succeeded with the configured client; both shared one token. The normalized live Rego response matched Sales Floor's normalizer field for field. Automated tests cover the request/auth contract, token reuse and renewal, no-result behavior, provider failures, normalization, risk warnings and Warranty's adapters/fallback.
 
+## Chery evidence flow
+
+Chery uses the 20 rules in `tools/templates/chery_evidence_rules_template.csv` rather than the common brand pack. Backend startup installs the published Chery pack on existing databases as well as fresh ones, when there is no published Chery pack and the built-in template has not already been installed or archived. Existing administrator packs are preserved. To replace a custom pack, create a Chery draft using **Chery evidence checklist (20 requirements)** in the portal, review it, and publish it.
+
+The supplied CSV marks every row Tier 1, mandatory, with Trigger=None, including the barcode and video rows. Those flags are preserved. The app's offline rules match the backend rules. Documents accept PDF or TXT; stored filenames follow the template with the uploaded file's actual extension. Workshop and OEM submission require all Chery evidence plus the existing walkaround photos. VIN and odometer presentation photos fulfil their walkaround categories too, giving 25 required items in total.
+
+Deploy/restart the backend and deploy both the portal and PWA for the full change. The portal lists the stored Chery pack under Brand Packs and offers the template and CSV download when creating a Chery draft.
+
 ## Run tests
 
 ```bash

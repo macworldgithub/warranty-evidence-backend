@@ -10,6 +10,12 @@ export const VEHICLE_PHOTO_CATEGORIES = [
   { ruleKey: 'modifications_photo', name: 'MODIFICATIONS', description: 'Any vehicle modifications, if applicable.', isMandatory: false },
 ] as const;
 
+
+// Presentation evidence fulfils the same VIN/odometer walkaround photo.
+export const vehiclePhotoKey = (key: string) =>
+  key === 'vin_presentation' ? 'vin_photo' : key === 'odometer_presentation' ? 'odometer_photo' : key;
+export const evidenceRuleKeysMatch = (left: string, right: string) => vehiclePhotoKey(left) === vehiclePhotoKey(right);
+
 type PhotoEvidence = { ruleKey: string; mediaType?: string; fileUri?: string; storageUrl?: string; serverUrl?: string; qualityStatus?: string };
 export function hasVehiclePhoto(item?: PhotoEvidence, uploadedOnly = false): boolean {
   if (!item || item.mediaType !== 'image' || item.qualityStatus === 'FAILED') return false;
@@ -18,5 +24,5 @@ export function hasVehiclePhoto(item?: PhotoEvidence, uploadedOnly = false): boo
 }
 export function missingVehiclePhotos(items: readonly PhotoEvidence[], uploadedOnly = false) {
   return VEHICLE_PHOTO_CATEGORIES.filter(category => category.isMandatory &&
-    !items.some(item => item.ruleKey === category.ruleKey && hasVehiclePhoto(item, uploadedOnly)));
+    !items.some(item => evidenceRuleKeysMatch(item.ruleKey, category.ruleKey) && hasVehiclePhoto(item, uploadedOnly)));
 }

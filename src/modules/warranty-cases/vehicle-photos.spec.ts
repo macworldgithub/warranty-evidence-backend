@@ -11,17 +11,20 @@ jest.mock('../sites/sites.service', () => ({ SitesService: class {} }));
 import { BadRequestException } from '@nestjs/common';
 import { WarrantyCasesService } from './warranty-cases.service';
 import { VEHICLE_PHOTO_CATEGORIES } from './vehicle-photos';
+import { CHERY_EVIDENCE_RULES } from '../brand-packs/chery-evidence-rules';
 
 const uploaded = VEHICLE_PHOTO_CATEGORIES.filter(photo => photo.isMandatory).map(photo => ({
   ruleKey: photo.ruleKey, mediaType: 'image', storageUrl: '/uploads/' + photo.ruleKey + '.jpg',
 }));
-function setup(evidenceItems: any[]) {
+function setup(evidenceItems: any[], chery = false) {
   const document: any = { roNumber: 'RO123', id: 'case', status: 'Uploading', evidenceItems, flagHistory: [], checklistSummary: {}, markModified: jest.fn() };
   document.save = jest.fn().mockResolvedValue({ toObject: () => document });
+  if (chery) document.brandId = 'brand_chery';
   const service = new WarrantyCasesService(
     { findOne: jest.fn().mockResolvedValue(document) } as never,
     { find: () => ({ lean: async () => [] }) } as never,
-    {} as never, { uploadFile: async (_buffer: Buffer, _mime: string, filename: string) => ({
+    { evaluateRules: async () => ({ resolvedRules: CHERY_EVIDENCE_RULES }), findActiveByBrand: async () => ({ rules: CHERY_EVIDENCE_RULES }) } as never,
+    { uploadFile: async (_buffer: Buffer, _mime: string, filename: string) => ({
       url: '/uploads/' + filename, oemFileName: filename,
     }) } as never, { sendNewTicketRaisedAlert: async () => undefined, sendNewTicketPushToAdmins: async () => undefined } as never, {} as never, {} as never,
   );
@@ -42,6 +45,40 @@ describe('defect photo uploads', () => {
       { id: 'photo-1', name: 'Retake', storageUrl: `/uploads/RO123${descriptor}_photo-1.jpg` },
       { id: 'photo-2', name: 'Second', storageUrl: `/uploads/RO123${descriptor}_photo-2.jpg` },
     ]);
+  });
+});
+
+describe('Chery evidence flow', () => {
+  const complete = [
+    ...uploaded.filter(item => !['vin_photo', 'odometer_photo'].includes(item.ruleKey)),
+    ...CHERY_EVIDENCE_RULES.map(rule => ({ ruleKey: rule.ruleKey, mediaType: rule.mediaType, storageUrl: '/uploads/' + rule.ruleKey })),
+  ];
+
+  it.each(CHERY_EVIDENCE_RULES)('blocks missing Chery requirement $ruleKey at workshop and OEM submission', async rule => {
+    const { service, document } = setup(complete.filter(item => item.ruleKey !== rule.ruleKey), true);
+    await expect(service.submitFromWorkshop('case')).rejects.toThrow(rule.name);
+    await expect(service.markSubmitted('case', {} as never)).rejects.toThrow(rule.name);
+    expect(document.save).not.toHaveBeenCalled();
+  });
+
+  it('counts presentation photos once alongside the existing walkaround', async () => {
+    const { service, document } = setup(complete, true);
+    await service.submitFromWorkshop('case');
+    expect(document.checklistSummary).toMatchObject({ totalMandatory: 25, completedMandatory: 25, isReadyForSubmission: true });
+  });
+
+  it('does not count local files or images in place of required documents', async () => {
+    const { service } = setup(complete.map(item => item.ruleKey === 'customer_complaint' ? { ...item, mediaType: 'image' } : item), true);
+    await expect(service.submitFromWorkshop('case')).rejects.toThrow('customer complaint');
+    const local = setup(complete.map(item => item.ruleKey === 'customer_complaint' ? { ...item, storageUrl: 'blob:local' } : item), true);
+    await expect(local.service.submitFromWorkshop('case')).rejects.toThrow('customer complaint');
+  });
+
+  it('uploads text descriptions under the template filename and keeps the ticket incomplete', async () => {
+    const { service, document } = setup([], true);
+    await service.uploadEvidence('case', { mimetype: 'text/plain', buffer: Buffer.from('Customer reports a rattle') } as Express.Multer.File, 'customer_complaint', 'Customer complaint');
+    expect(document.evidenceItems[0]).toMatchObject({ mediaType: 'document', oemFileName: 'RO123_Complaint.txt' });
+    expect(document.checklistSummary.isReadyForSubmission).toBe(false);
   });
 });
 
