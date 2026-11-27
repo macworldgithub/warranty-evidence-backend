@@ -1,4 +1,4 @@
-﻿import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 export type HoistDocument = Hoist & Document;
@@ -26,7 +26,7 @@ export class Hoist {
   @Prop({ required: true })
   name: string;
 
-  @Prop({ required: true, enum: ['hyundai_chery', 'byd_kia', 'general', 'southland'], default: 'hyundai_chery' })
+  @Prop({ required: true, enum: ['hyundai_chery', 'byd_kia', 'general', 'southland', 'dandenong_gwm'], default: 'hyundai_chery' })
   facility: string;
 
   @Prop({ required: true })

@@ -136,6 +136,23 @@ export class HoistsService implements OnModuleInit {
       }
     }
 
+    for (let number = 1; number <= 11; number++) {
+      hoistsToSeed.push({
+        id: `hoist_dandenong_gwm_${String(number).padStart(2, '0')}`,
+        hoistNumber: number,
+        name: `Hoist ${number}`,
+        facility: 'dandenong_gwm',
+        facilityName: 'Dandenong GWM',
+        siteId: 'site_dandenong_gwm',
+        brand: 'Unrecorded',
+        type: 'Unrecorded',
+        capacityKg: null,
+        status: 'OPERATIONAL',
+        lockoutTagoutActive: false,
+        isActive: true,
+      });
+    }
+
     for (const h of hoistsToSeed) {
       const { name, ...initialFields } = h;
       await this.hoistModel.updateOne(
